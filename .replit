@@ -63,3 +63,15 @@ externalPort = 3000
 [deployment]
 deploymentTarget = "cloudrun"
 run = ["sh", "-c", "cargo test"]
+
+[workflows]
+runButton = "Run Tests"
+
+[[workflows.workflow]]
+name = "Run Tests"
+author = 17531197
+mode = "sequential"
+
+[[workflows.workflow.tasks]]
+task = "shell.exec"
+args = "cargo test"
