@@ -1,5 +1,6 @@
 mod args;
 pub mod bitcoind_client;
+pub mod exercises;
 mod cli;
 mod convert;
 mod disk;
