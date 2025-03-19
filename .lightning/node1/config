@@ -1,0 +1,8 @@
+network=regtest
+log-level=debug
+log-file=/home/runner/workspace/.lightning/node1/log
+addr=localhost:7070
+bitcoin-rpcuser=bitcoind
+bitcoin-rpcpassword=bitcoind
+bitcoin-rpcconnect=127.0.0.1
+bitcoin-rpcport=18443
