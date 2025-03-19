@@ -29,7 +29,19 @@ use std::str::FromStr;
 use std::sync::atomic::{AtomicU32, Ordering};
 use std::sync::Arc;
 use std::time::Duration;
-use crate::exercises::bitcoind::{BitcoindClient, MIN_FEERATE}
+// Private module containing locked implementation
+mod locked_impl {
+    pub(super) const MIN_FEERATE: u32 = 253;
+    
+    pub(super) fn validate_feerate(rate: u32) -> bool {
+        rate >= MIN_FEERATE
+    }
+}
+
+// Public interface that students work with
+pub struct BitcoindClient {
+    // ... rest of the implementation
+}
 
 pub struct BitcoindClient {
 	pub(crate) bitcoind_rpc_client: Arc<RpcClient>,
