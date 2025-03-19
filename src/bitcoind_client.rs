@@ -29,6 +29,7 @@ use std::str::FromStr;
 use std::sync::atomic::{AtomicU32, Ordering};
 use std::sync::Arc;
 use std::time::Duration;
+use crate::exercises::bitcoind::{BitcoindClient, MIN_FEERATE}
 
 pub struct BitcoindClient {
 	pub(crate) bitcoind_rpc_client: Arc<RpcClient>,
