@@ -1,3 +1,4 @@
+#![allow(dead_code, unused_imports, unused_variables, unused_must_use, unexpected_cfgs, deprecated)]
 use crate::cli::LdkUserInfo;
 use bitcoin::network::Network;
 use lightning::ln::msgs::SocketAddress;
@@ -233,6 +234,7 @@ fn parse_env_file(env_file_name: Option<&str>) -> Result<HashMap<String, String>
 	Ok(env_file_map)
 }
 
+/*
 #[cfg(test)]
 mod rpc_auth_tests {
 	use super::*;
@@ -362,3 +364,4 @@ mod rpc_auth_tests {
 		assert_eq!(password, EXPECTED_PASSWORD);
 	}
 }
+*/

@@ -345,6 +345,7 @@ dependencies = [
  "bitcoin",
  "bitcoin-bech32",
  "chrono",
+ "hex_lit",
  "libc",
  "lightning",
  "lightning-background-processor",

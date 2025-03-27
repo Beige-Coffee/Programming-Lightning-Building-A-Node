@@ -1,4 +1,4 @@
-run = "RUSTFLAGS=\"-Awarnings\" cargo run -- bitcoind:bitcoind@0.0.0.0:18443 ./ regtest"
+run = "cargo test"
 
 hidden = [
   "target",
@@ -40,6 +40,10 @@ pattern = "**/*.rs"
 start = "rust-analyzer"
 
 [[ports]]
+localPort = 8080
+externalPort = 8080
+
+[[ports]]
 localPort = 8332
 externalPort = 3002
 exposeLocalhost = true
@@ -66,12 +70,3 @@ run = ["sh", "-c", "cargo test"]
 
 [workflows]
 runButton = "Run Tests"
-
-[[workflows.workflow]]
-name = "Run Tests"
-author = 17531197
-mode = "sequential"
-
-[[workflows.workflow.tasks]]
-task = "shell.exec"
-args = "cargo test"

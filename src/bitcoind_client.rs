@@ -1,6 +1,7 @@
+#![allow(dead_code, unused_imports, unused_variables,unused_mut, unused_must_use, unexpected_cfgs, elided_named_lifetimes)]
 use crate::convert::{
 	BlockchainInfo, FeeResponse, FundedTx, ListUnspentResponse, MempoolMinFeeResponse, NewAddress,
-	RawTx, SignedTx,
+	RawTx, SignedTx, MempoolInfo
 };
 use crate::disk::FilesystemLogger;
 use crate::hex_utils;
@@ -29,7 +30,14 @@ use std::str::FromStr;
 use std::sync::atomic::{AtomicU32, Ordering};
 use std::sync::Arc;
 use std::time::Duration;
-use crate::exercises::bitcoind::{BitcoindClient, MIN_FEERATE}
+
+/// The minimum feerate we are allowed to send, as specify by LDK.
+const MIN_FEERATE: u32 = 253;
+
+////////////////////////////
+// START Exercise 1 //
+// Implement `new`
+////////////////////////////
 
 pub struct BitcoindClient {
 	pub(crate) bitcoind_rpc_client: Arc<RpcClient>,
@@ -38,10 +46,69 @@ pub struct BitcoindClient {
 	port: u16,
 	rpc_user: String,
 	rpc_password: String,
-	fees: Arc<HashMap<ConfirmationTarget, AtomicU32>>,
+	pub fees: Arc<HashMap<ConfirmationTarget, AtomicU32>>,
 	handle: tokio::runtime::Handle,
 	logger: Arc<FilesystemLogger>,
 }
+
+impl BitcoindClient {
+	pub(crate) async fn new(
+		host: String, port: u16, rpc_user: String, rpc_password: String, network: Network,
+		handle: tokio::runtime::Handle, logger: Arc<FilesystemLogger>,
+	) -> std::io::Result<Self> {
+		let http_endpoint = HttpEndpoint::for_host(host.clone()).with_port(port);
+		let rpc_credentials =
+			base64::encode(format!("{}:{}", rpc_user.clone(), rpc_password.clone()));
+		let bitcoind_rpc_client = RpcClient::new(&rpc_credentials, http_endpoint)?;
+
+		let mut fees: HashMap<ConfirmationTarget, AtomicU32> = HashMap::new();
+
+		fees.insert(ConfirmationTarget::MaximumFeeEstimate, AtomicU32::new(50000));
+		fees.insert(ConfirmationTarget::UrgentOnChainSweep, AtomicU32::new(5000));
+		fees.insert(
+				ConfirmationTarget::MinAllowedAnchorChannelRemoteFee,
+				AtomicU32::new(MIN_FEERATE),
+		);
+		fees.insert(
+				ConfirmationTarget::MinAllowedNonAnchorChannelRemoteFee,
+				AtomicU32::new(MIN_FEERATE),
+		);
+		fees.insert(ConfirmationTarget::AnchorChannelFee, AtomicU32::new(MIN_FEERATE));
+		fees.insert(ConfirmationTarget::NonAnchorChannelFee, AtomicU32::new(2000));
+		fees.insert(ConfirmationTarget::ChannelCloseMinimum, AtomicU32::new(MIN_FEERATE));
+		fees.insert(ConfirmationTarget::OutputSpendingFee, AtomicU32::new(MIN_FEERATE));
+
+
+		let client = Self {
+			bitcoind_rpc_client: Arc::new(bitcoind_rpc_client),
+			host,
+			port,
+			rpc_user,
+			rpc_password,
+			network,
+			fees: Arc::new(fees),
+			handle: handle.clone(),
+			logger,
+		};
+
+		BitcoindClient::poll_for_fee_estimates(
+				client.fees.clone(),
+				client.bitcoind_rpc_client.clone(),
+				handle,
+		);
+		
+		Ok(client)
+	}
+
+	////////////////////////////
+	// END Exercise 1 //
+	////////////////////////////
+
+}
+
+////////////////////////////
+// START Exercise 2 //
+////////////////////////////
 
 impl BlockSource for BitcoindClient {
 	fn get_header<'a>(
@@ -61,60 +128,66 @@ impl BlockSource for BitcoindClient {
 	}
 }
 
-/// The minimum feerate we are allowed to send, as specify by LDK.
-const MIN_FEERATE: u32 = 253;
+////////////////////////////
+// END Exercise 2 //
+////////////////////////////
+
+
+////////////////////////////
+// START Exercise 3 //
+////////////////////////////
+
+impl BroadcasterInterface for BitcoindClient {
+	fn broadcast_transactions(&self, txs: &[&Transaction]) {
+		// As of Bitcoin Core 28, using `submitpackage` allows us to broadcast multiple
+		// transactions at once and have them propagate through the network as a whole, avoiding
+		// some pitfalls with anchor channels where the first transaction doesn't make it into the
+		// mempool at all. Several older versions of Bitcoin Core also support `submitpackage`,
+		// however, so we just use it unconditionally here.
+		// Sadly, Bitcoin Core has an arbitrary restriction on `submitpackage` - it must actually
+		// contain a package (see https://github.com/bitcoin/bitcoin/issues/31085).
+		let txn = txs.iter().map(|tx| encode::serialize_hex(tx)).collect::<Vec<_>>();
+		let bitcoind_rpc_client = Arc::clone(&self.bitcoind_rpc_client);
+		let logger = Arc::clone(&self.logger);
+		self.handle.spawn(async move {
+			let res = if txn.len() == 1 {
+				let tx_json = serde_json::json!(txn[0]);
+				bitcoind_rpc_client
+					.call_method::<serde_json::Value>("sendrawtransaction", &[tx_json])
+					.await
+			} else {
+				let tx_json = serde_json::json!(txn);
+				bitcoind_rpc_client
+					.call_method::<serde_json::Value>("submitpackage", &[tx_json])
+					.await
+			};
+			// This may error due to RL calling `broadcast_transactions` with the same transaction
+			// multiple times, but the error is safe to ignore.
+			match res {
+				Ok(_) => {}
+				Err(e) => {
+					let err_str = e.get_ref().unwrap().to_string();
+					log_error!(logger,
+						"Warning, failed to broadcast a transaction, this is likely okay but may indicate an error: {}\nTransactions: {:?}",
+						err_str,
+						txn);
+					print!("Warning, failed to broadcast a transaction, this is likely okay but may indicate an error: {}\n> ", err_str);
+				}
+			}
+		});
+	}
+}
+
+////////////////////////////
+// END Exercise 3 //
+////////////////////////////
+
+
+////////////////////////////
+// START Exercise 4 //
+////////////////////////////
 
 impl BitcoindClient {
-	pub(crate) async fn new(
-		host: String, port: u16, rpc_user: String, rpc_password: String, network: Network,
-		handle: tokio::runtime::Handle, logger: Arc<FilesystemLogger>,
-	) -> std::io::Result<Self> {
-		let http_endpoint = HttpEndpoint::for_host(host.clone()).with_port(port);
-		let rpc_credentials =
-			base64::encode(format!("{}:{}", rpc_user.clone(), rpc_password.clone()));
-		let bitcoind_rpc_client = RpcClient::new(&rpc_credentials, http_endpoint)?;
-		let _dummy = bitcoind_rpc_client
-			.call_method::<BlockchainInfo>("getblockchaininfo", &vec![])
-			.await
-			.map_err(|_| {
-				std::io::Error::new(std::io::ErrorKind::PermissionDenied,
-				"Failed to make initial call to bitcoind - please check your RPC user/password and access settings")
-			})?;
-		let mut fees: HashMap<ConfirmationTarget, AtomicU32> = HashMap::new();
-		fees.insert(ConfirmationTarget::MaximumFeeEstimate, AtomicU32::new(50000));
-		fees.insert(ConfirmationTarget::UrgentOnChainSweep, AtomicU32::new(5000));
-		fees.insert(
-			ConfirmationTarget::MinAllowedAnchorChannelRemoteFee,
-			AtomicU32::new(MIN_FEERATE),
-		);
-		fees.insert(
-			ConfirmationTarget::MinAllowedNonAnchorChannelRemoteFee,
-			AtomicU32::new(MIN_FEERATE),
-		);
-		fees.insert(ConfirmationTarget::AnchorChannelFee, AtomicU32::new(MIN_FEERATE));
-		fees.insert(ConfirmationTarget::NonAnchorChannelFee, AtomicU32::new(2000));
-		fees.insert(ConfirmationTarget::ChannelCloseMinimum, AtomicU32::new(MIN_FEERATE));
-		fees.insert(ConfirmationTarget::OutputSpendingFee, AtomicU32::new(MIN_FEERATE));
-
-		let client = Self {
-			bitcoind_rpc_client: Arc::new(bitcoind_rpc_client),
-			host,
-			port,
-			rpc_user,
-			rpc_password,
-			network,
-			fees: Arc::new(fees),
-			handle: handle.clone(),
-			logger,
-		};
-		BitcoindClient::poll_for_fee_estimates(
-			client.fees.clone(),
-			client.bitcoind_rpc_client.clone(),
-			handle,
-		);
-		Ok(client)
-	}
-
 	fn poll_for_fee_estimates(
 		fees: Arc<HashMap<ConfirmationTarget, AtomicU32>>, rpc_client: Arc<RpcClient>,
 		handle: tokio::runtime::Handle,
@@ -226,6 +299,20 @@ impl BitcoindClient {
 			}
 		});
 	}
+}
+
+impl FeeEstimator for BitcoindClient {
+	fn get_est_sat_per_1000_weight(&self, confirmation_target: ConfirmationTarget) -> u32 {
+		self.fees.get(&confirmation_target).unwrap().load(Ordering::Acquire)
+	}
+}
+
+
+	////////////////////////////
+	// END Exercise 4 //
+	////////////////////////////
+
+impl BitcoindClient {
 
 	pub fn get_new_rpc_client(&self) -> std::io::Result<RpcClient> {
 		let http_endpoint = HttpEndpoint::for_host(self.host.clone()).with_port(self.port);
@@ -299,58 +386,18 @@ impl BitcoindClient {
 			.unwrap()
 	}
 
+	pub async fn get_raw_mempool(&self) -> MempoolInfo {
+	self.bitcoind_rpc_client
+	.call_method("getrawmempool", &[])
+	.await
+	.unwrap()
+	}
+
 	pub async fn list_unspent(&self) -> ListUnspentResponse {
 		self.bitcoind_rpc_client
 			.call_method::<ListUnspentResponse>("listunspent", &vec![])
 			.await
 			.unwrap()
-	}
-}
-
-impl FeeEstimator for BitcoindClient {
-	fn get_est_sat_per_1000_weight(&self, confirmation_target: ConfirmationTarget) -> u32 {
-		self.fees.get(&confirmation_target).unwrap().load(Ordering::Acquire)
-	}
-}
-
-impl BroadcasterInterface for BitcoindClient {
-	fn broadcast_transactions(&self, txs: &[&Transaction]) {
-		// As of Bitcoin Core 28, using `submitpackage` allows us to broadcast multiple
-		// transactions at once and have them propagate through the network as a whole, avoiding
-		// some pitfalls with anchor channels where the first transaction doesn't make it into the
-		// mempool at all. Several older versions of Bitcoin Core also support `submitpackage`,
-		// however, so we just use it unconditionally here.
-		// Sadly, Bitcoin Core has an arbitrary restriction on `submitpackage` - it must actually
-		// contain a package (see https://github.com/bitcoin/bitcoin/issues/31085).
-		let txn = txs.iter().map(|tx| encode::serialize_hex(tx)).collect::<Vec<_>>();
-		let bitcoind_rpc_client = Arc::clone(&self.bitcoind_rpc_client);
-		let logger = Arc::clone(&self.logger);
-		self.handle.spawn(async move {
-			let res = if txn.len() == 1 {
-				let tx_json = serde_json::json!(txn[0]);
-				bitcoind_rpc_client
-					.call_method::<serde_json::Value>("sendrawtransaction", &[tx_json])
-					.await
-			} else {
-				let tx_json = serde_json::json!(txn);
-				bitcoind_rpc_client
-					.call_method::<serde_json::Value>("submitpackage", &[tx_json])
-					.await
-			};
-			// This may error due to RL calling `broadcast_transactions` with the same transaction
-			// multiple times, but the error is safe to ignore.
-			match res {
-				Ok(_) => {}
-				Err(e) => {
-					let err_str = e.get_ref().unwrap().to_string();
-					log_error!(logger,
-						"Warning, failed to broadcast a transaction, this is likely okay but may indicate an error: {}\nTransactions: {:?}",
-						err_str,
-						txn);
-					print!("Warning, failed to broadcast a transaction, this is likely okay but may indicate an error: {}\n> ", err_str);
-				}
-			}
-		});
 	}
 }
 

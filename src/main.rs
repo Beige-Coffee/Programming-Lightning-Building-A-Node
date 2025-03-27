@@ -1,11 +1,16 @@
+#![allow(dead_code, unused_imports, unused_variables, unused_must_use, unexpected_cfgs)]
 mod args;
 pub mod bitcoind_client;
-pub mod exercises;
 mod cli;
 mod convert;
 mod disk;
 mod hex_utils;
 mod sweep;
+mod tests;
+mod networking;
+mod events;
+mod internal;
+mod commands;
 
 use crate::bitcoind_client::BitcoindClient;
 use crate::disk::FilesystemLogger;
@@ -881,6 +886,7 @@ async fn start_ldk() {
 	let listening_port = args.ldk_peer_listening_port;
 	let stop_listen_connect = Arc::new(AtomicBool::new(false));
 	let stop_listen = Arc::clone(&stop_listen_connect);
+	
 	tokio::spawn(async move {
 		let listener = tokio::net::TcpListener::bind(format!("[::]:{}", listening_port))
 			.await

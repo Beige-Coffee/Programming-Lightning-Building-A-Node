@@ -21,11 +21,12 @@ bitcoin = "0.32"
 bitcoin-bech32 = "0.12"
 bech32 = "0.8"
 libc = "0.2"
+hex_lit = "0.1.1"
 
 chrono = { version = "0.4", default-features = false, features = ["clock"] }
 rand = "0.4"
 serde_json = { version = "1.0" }
-tokio = { version = "1", features = [ "io-util", "macros", "rt", "rt-multi-thread", "sync", "net", "time" ] }
+tokio = { version = "1", features = [ "io-util", "macros", "rt", "rt-multi-thread", "sync", "net", "time"] }
 
 [profile.release]
 panic = "abort"

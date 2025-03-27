@@ -1,3 +1,4 @@
+#![allow(dead_code, unused_imports, unused_variables, unused_must_use, unexpected_cfgs)]
 use bitcoin::secp256k1::PublicKey;
 use std::fmt::Write;
 

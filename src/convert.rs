@@ -1,3 +1,4 @@
+#![allow(dead_code, unused_imports, unused_variables, unused_must_use, unexpected_cfgs)]
 use bitcoin::{Address, BlockHash, Txid};
 use lightning_block_sync::http::JsonResponse;
 use std::convert::TryInto;
@@ -147,4 +148,33 @@ impl TryInto<ListUnspentResponse> for JsonResponse {
 			.collect();
 		Ok(ListUnspentResponse(utxos))
 	}
+}
+
+
+#[derive(Debug)]
+pub struct MempoolInfo {
+		pub transaction_ids: Vec<String>,
+}
+
+impl TryInto<MempoolInfo> for JsonResponse {
+		type Error = std::io::Error;
+
+		fn try_into(self) -> std::io::Result<MempoolInfo> {
+				// Ensure the response is a JSON array
+				let array = self.0.as_array().ok_or_else(|| {
+						std::io::Error::new(std::io::ErrorKind::InvalidData, "Expected a JSON array")
+				})?;
+
+				// Convert the array items into a Vec<String>
+				let transaction_ids = array
+						.iter()
+						.map(|item| {
+								item.as_str()
+										.map(|s| s.to_string())
+										.ok_or_else(|| std::io::Error::new(std::io::ErrorKind::InvalidData, "Non-string item found"))
+						})
+						.collect::<Result<Vec<_>, _>>()?;
+
+				Ok(MempoolInfo { transaction_ids })
+		}
 }
