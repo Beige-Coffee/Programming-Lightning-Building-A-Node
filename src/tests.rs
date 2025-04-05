@@ -25,7 +25,9 @@ use bitcoin::{ScriptBuf};
 use bitcoin::script::Builder;
 use lightning::events::{Event};
 use crate::internal::types::{KeysManager, PeerManager, FileStore};
-use crate::commands::{open_channel, HTLCStatus, MillisatAmount as SatAmount, PaymentInfo,  OutboundPaymentInfoStorage};
+use crate::commands::{open_channel, HTLCStatus, MillisatAmount as SatAmount, PaymentInfo,  OutboundPaymentInfoStorage, send_payment};
+use lightning_invoice::{Bolt11Invoice};
+use std::str::FromStr;
 
 async fn get_bitcoind_client() -> BitcoindClient {
     let logger = Arc::new(FilesystemLogger::new("test_dir".to_string()));
@@ -265,6 +267,28 @@ mod bitcoind_tests {
 
         // Step 3: Verify it was added correctly
         assert_eq!(outbound_payments.payments.len(), 1, "Should have one payment");
+    }
+
+    #[test]
+    fn test_send_payment() {
+        let channel_manager = ChannelManager::new();
+        let mut outbound_payments = OutboundPaymentInfoStorage {
+            payments: HashMap::new(),
+        };
+        let required_amount_msat = Some(250_000_000);
+        let file_store = FileStore::new();
+
+        let invoice = Bolt11Invoice::from_str( "lnbc2500u1pvjluezsp5zyg3zyg3zyg3zyg3zyg3zyg3zyg3zyg3zyg3zyg3zyg3zyg3zygspp5qqqsyqcyq5rqwzqfqqqsyqcyq5rqwzqfqqqsyqcyq5rqwzqfqypqdq5xysxxatsyp3k7enxv4jsxqzpu9qrsgquk0rl77nj30yxdy8j9vdx85fkpmdla2087ne0xh8nhedh8w27kyke0lp53ut353s06fv3qfegext0eh0ymjpf39tuven09sam30g4vgpfna3rh").expect("Valid invoice");
+
+        send_payment(&channel_manager, &invoice, required_amount_msat,
+          &mut outbound_payments, file_store);
+
+        // Check final state
+        let final_payments = channel_manager.payments.lock().unwrap();
+        println!("Final channels: {:?}", final_payments);
+
+        assert!(final_payments.is_some(), "New payment should be present");
+
     }
 }
 
