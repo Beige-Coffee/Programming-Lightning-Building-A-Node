@@ -106,10 +106,10 @@ impl Writeable for MillisatAmount {
 }
 
 pub(crate) struct PaymentInfo {
-	pub preimage: Option<PaymentPreimage>,
-	pub secret: Option<PaymentSecret>,
-	pub status: HTLCStatus,
-	pub amt_msat: MillisatAmount,
+	preimage: Option<PaymentPreimage>,
+	secret: Option<PaymentSecret>,
+	status: HTLCStatus,
+	amt_msat: MillisatAmount,
 }
 
 impl_writeable_tlv_based!(PaymentInfo, {
