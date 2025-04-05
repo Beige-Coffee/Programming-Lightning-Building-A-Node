@@ -25,7 +25,7 @@ use bitcoin::{ScriptBuf};
 use bitcoin::script::Builder;
 use lightning::events::{Event};
 use crate::internal::types::{KeysManager, PeerManager, FileStore};
-use crate::commands::{open_channel};
+use crate::commands::{open_channel, HTLCStatus, MillisatAmount as SatAmount, PaymentInfo,  OutboundPaymentInfoStorage};
 
 async fn get_bitcoind_client() -> BitcoindClient {
     let logger = Arc::new(FilesystemLogger::new("test_dir".to_string()));
@@ -242,6 +242,29 @@ mod bitcoind_tests {
         assert!(final_channels.is_some(), "New channel should be present");
 
 
+    }
+
+    #[test]
+    fn test_outbound_payment() {
+        // Step 1: Setup empty storage
+        let mut outbound_payments = OutboundPaymentInfoStorage {
+            payments: HashMap::new(),
+        };
+
+        // Step 2: Add a payment
+        let payment_id = Some(PaymentId([0x01; 32]));
+        let payment_secret = Some(PaymentSecret([0x01; 32]));
+        let amount = SatAmount(Some(1000));
+        let payment_info = PaymentInfo {
+            preimage: None,
+            secret: payment_secret, 
+            status: HTLCStatus::Pending,
+            amt_msat: amount,
+        };
+        outbound_payments.payments.insert(payment_id.expect("Valid ID"), payment_info);
+
+        // Step 3: Verify it was added correctly
+        assert_eq!(outbound_payments.payments.len(), 1, "Should have one payment");
     }
 }
 

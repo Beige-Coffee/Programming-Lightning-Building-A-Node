@@ -1,7 +1,14 @@
 use crate::internal::channel_manager::ChannelManager;
 use bitcoin::secp256k1::PublicKey;
 use lightning::util::config::{ChannelHandshakeConfig, ChannelHandshakeLimits, UserConfig};
+use lightning::types::payment::{PaymentHash, PaymentPreimage, PaymentSecret};
+use lightning::ln::channelmanager::{PaymentId,
+};
+use std::collections::HashMap;
 
+//
+  // Open Channel Exercise
+//
 pub fn open_channel(
 	peer_pubkey: PublicKey, channel_amt_sat: u64, announce_for_forwarding: bool,
 	with_anchors: bool, channel_manager: &ChannelManager,
@@ -32,3 +39,31 @@ pub fn open_channel(
     },
   }
 }
+
+//
+  // Send Payment Exercise 1
+//
+
+#[derive(Copy, Clone, Debug)]
+pub(crate) enum HTLCStatus {
+  Pending,
+  Succeeded,
+  Failed,
+}
+
+pub(crate) struct MillisatAmount(pub Option<u64>);
+
+pub(crate) struct PaymentInfo {
+  preimage: Option<PaymentPreimage>,
+  secret: Option<PaymentSecret>,
+  status: HTLCStatus,
+  amt_msat: MillisatAmount,
+}
+
+pub(crate) struct OutboundPaymentInfoStorage {
+  pub payments: HashMap<PaymentId, PaymentInfo>,
+}
+
+//
+  // Send Payment Exercise 2
+//
