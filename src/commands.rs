@@ -54,10 +54,10 @@ pub(crate) enum HTLCStatus {
 pub(crate) struct MillisatAmount(pub Option<u64>);
 
 pub(crate) struct PaymentInfo {
-  preimage: Option<PaymentPreimage>,
-  secret: Option<PaymentSecret>,
-  status: HTLCStatus,
-  amt_msat: MillisatAmount,
+  pub preimage: Option<PaymentPreimage>,
+  pub secret: Option<PaymentSecret>,
+  pub status: HTLCStatus,
+  pub amt_msat: MillisatAmount,
 }
 
 pub(crate) struct OutboundPaymentInfoStorage {
