@@ -11,6 +11,9 @@ mod networking;
 mod events;
 mod internal;
 mod commands;
+mod keysmanager;
+mod fs_store;
+mod fs_store2;
 
 use crate::bitcoind_client::BitcoindClient;
 use crate::disk::FilesystemLogger;

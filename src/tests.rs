@@ -28,6 +28,11 @@ use crate::internal::types::{KeysManager, PeerManager, FileStore};
 use crate::commands::{open_channel, HTLCStatus, MillisatAmount as SatAmount, PaymentInfo,  OutboundPaymentInfoStorage, send_payment};
 use lightning_invoice::{Bolt11Invoice};
 use std::str::FromStr;
+use crate::keysmanager::{NodeKeysManager};
+use bitcoin::secp256k1::SecretKey;
+use fs_store::{FileStore as ExerciseFileStore};
+use std::env::temp_dir;
+use lightning::io::{ErrorKind};
 
 async fn get_bitcoind_client() -> BitcoindClient {
     let logger = Arc::new(FilesystemLogger::new("test_dir".to_string()));
@@ -290,6 +295,52 @@ mod bitcoind_tests {
         assert!(final_payments.is_some(), "New payment should be present");
 
     }
+
+    #[test]
+    fn test_node_keys_manager() {
+        let countersignatory_basepoint = pubkey_from_private_key(&[0x01; 32]);
+        let seed = &[0x02; 32];
+        let keys_manager = NodeKeysManager::new(*seed);
+
+        let actual = keys_manager.node_id.to_string();
+
+        let expected = "02888f2e3df341d21240f769afd83938fdc1878356769aae64141880d810c61dce";
+
+        assert_eq!(
+            actual, expected,
+            "Revocation pubkey doesn't match expected value"
+        );
+    }
+
+    #[test]
+    fn test_simple_store() -> io::Result<()> {
+        let mut temp_path = temp_dir();
+        temp_path.push("simple_store_test");
+        let store = ExerciseFileStore::new(temp_path)?;
+
+        // Test write and read
+        store.write("test", "user1", "key1", b"hello world")?;
+        let data = store.read("test", "user1", "key1")?;
+        assert_eq!(data, b"hello world");
+
+        // Test list
+        let keys = store.list("test", "user1")?;
+        assert_eq!(keys, vec!["key1"]);
+
+        // Test remove
+        store.remove("test", "user1", "key1", false)?;
+        let keys = store.list("test", "user1")?;
+        assert_eq!(keys.len(), 0);
+
+        // Test NotFound error
+        match store.read("test", "user1", "nonexistent") {
+            Err(e) if e.kind() == ErrorKind::NotFound => (),
+            _ => panic!("Expected NotFound error"),
+        }
+
+        Ok(())
+    }
+    
 }
 
 fn pubkey_from_private_key(private_key: &[u8; 32]) -> PublicKey {
