@@ -24,6 +24,7 @@ use lightning::util::logger::Logger;
 use lightning_block_sync::http::HttpEndpoint;
 use lightning_block_sync::rpc::RpcClient;
 use lightning_block_sync::{AsyncBlockSourceResult, BlockData, BlockHeaderData, BlockSource};
+use lightning::log_info;
 use serde_json;
 use std::collections::HashMap;
 use std::str::FromStr;
@@ -114,17 +115,26 @@ impl BlockSource for BitcoindClient {
 	fn get_header<'a>(
 		&'a self, header_hash: &'a BlockHash, height_hint: Option<u32>,
 	) -> AsyncBlockSourceResult<'a, BlockHeaderData> {
-		Box::pin(async move { self.bitcoind_rpc_client.get_header(header_hash, height_hint).await })
+		Box::pin(async move { 
+			let header_hash = serde_json::json!(header_hash.to_string());
+			Ok(self.bitcoind_rpc_client.call_method("getblockheader", &[header_hash]).await?)
+		})
 	}
 
 	fn get_block<'a>(
 		&'a self, header_hash: &'a BlockHash,
 	) -> AsyncBlockSourceResult<'a, BlockData> {
-		Box::pin(async move { self.bitcoind_rpc_client.get_block(header_hash).await })
+		Box::pin( async move {
+			let header_hash = serde_json::json!(header_hash.to_string());
+			let verbosity = serde_json::json!(0);
+			Ok(BlockData::FullBlock(self.bitcoind_rpc_client.call_method("getblock", &[header_hash, verbosity]).await?))
+		})
 	}
 
 	fn get_best_block<'a>(&'a self) -> AsyncBlockSourceResult<(BlockHash, Option<u32>)> {
-		Box::pin(async move { self.bitcoind_rpc_client.get_best_block().await })
+		Box::pin(async move {
+			Ok(self.bitcoind_rpc_client.call_method("getblockchaininfo", &[]).await?)
+		})
 	}
 }
 
@@ -137,44 +147,29 @@ impl BlockSource for BitcoindClient {
 // START Exercise 3 //
 ////////////////////////////
 
+
 impl BroadcasterInterface for BitcoindClient {
 	fn broadcast_transactions(&self, txs: &[&Transaction]) {
-		// As of Bitcoin Core 28, using `submitpackage` allows us to broadcast multiple
-		// transactions at once and have them propagate through the network as a whole, avoiding
-		// some pitfalls with anchor channels where the first transaction doesn't make it into the
-		// mempool at all. Several older versions of Bitcoin Core also support `submitpackage`,
-		// however, so we just use it unconditionally here.
-		// Sadly, Bitcoin Core has an arbitrary restriction on `submitpackage` - it must actually
-		// contain a package (see https://github.com/bitcoin/bitcoin/issues/31085).
 		let txn = txs.iter().map(|tx| encode::serialize_hex(tx)).collect::<Vec<_>>();
-		let bitcoind_rpc_client = Arc::clone(&self.bitcoind_rpc_client);
-		let logger = Arc::clone(&self.logger);
-		self.handle.spawn(async move {
-			let res = if txn.len() == 1 {
-				let tx_json = serde_json::json!(txn[0]);
-				bitcoind_rpc_client
+		for tx in txn {
+			let bitcoind_rpc_client = Arc::clone(&self.bitcoind_rpc_client);
+			let logger = Arc::clone(&self.logger);
+			self.main_runtime_handle.spawn(async move {
+				let tx_json = serde_json::json!(tx);
+				match bitcoind_rpc_client
 					.call_method::<serde_json::Value>("sendrawtransaction", &[tx_json])
 					.await
-			} else {
-				let tx_json = serde_json::json!(txn);
-				bitcoind_rpc_client
-					.call_method::<serde_json::Value>("submitpackage", &[tx_json])
-					.await
-			};
-			// This may error due to RL calling `broadcast_transactions` with the same transaction
-			// multiple times, but the error is safe to ignore.
-			match res {
-				Ok(_) => {}
-				Err(e) => {
-					let err_str = e.get_ref().unwrap().to_string();
-					log_error!(logger,
-						"Warning, failed to broadcast a transaction, this is likely okay but may indicate an error: {}\nTransactions: {:?}",
-						err_str,
-						txn);
-					print!("Warning, failed to broadcast a transaction, this is likely okay but may indicate an error: {}\n> ", err_str);
+
+				{
+					Ok(result) => {
+						log_info!(logger, "Successfully broadcasted transaction: {:?}", result);
+					},
+					Err(e) => {
+						log_error!(logger, "Failed to broadcast transaction: {:?}", e);
+					}
 				}
-			}
-		});
+			});
+		}
 	}
 }
 
