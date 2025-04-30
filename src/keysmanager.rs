@@ -11,33 +11,52 @@ use bitcoin::secp256k1::SecretKey;
 
 #[derive(Debug, PartialEq, Eq, Clone)]
 pub struct NodeKeysManager {
-    pub secp_ctx: Secp256k1<secp256k1::All>,
-    pub channel_master_key: Xpriv,
-    pub node_secret: SecretKey,
-    pub node_id: PublicKey,
-    pub seed: [u8; 32],
+    secp_ctx: Secp256k1<secp256k1::All>,
+    node_secret: SecretKey,
+    node_id: PublicKey,
+    destination_xpub: Xpub,
+    channel_master_key: Xpriv,
+    channel_child_index: AtomicUsize,
+    seed: [u8; 32],
+    starting_time_secs: u64,
+    starting_time_nanos: u32,
 }
 
 impl NodeKeysManager {
     pub(crate) fn new(seed: [u8; 32]) -> NodeKeysManager {
+        
         let secp_ctx = Secp256k1::new();
 
-        let master_key = get_master_key(seed);
+        let master_key = match Xpriv::new_master(Network::Testnet, seed) {
+            Ok(key) => key,
+            Err(_) => panic!("Your RNG is busted"),
+        };
 
         let node_secret = master_key
             .derive_priv(&secp_ctx, &ChildNumber::from_hardened_idx(0).unwrap())
             .expect("Your RNG is busted")
             .private_key;
+
+        let destination_key = master_key
+            .derive_priv(&secp_ctx, &ChildNumber::from_hardened_idx(2).unwrap())
+            .expect("Your RNG is busted");
+        
+        let destination_xpub = Xpub::from_priv(&secp_ctx, &destination_key)
+        
         let node_id = PublicKey::from_secret_key(&secp_ctx, &node_secret);
 
-        let channel_master_key = get_hardened_extended_child_private_key(master_key, 3);
+        let channel_master_key = master_key
+            .derive_priv(&secp_ctx, &ChildNumber::from_hardened_idx(3).unwrap())
+            .expect("Your RNG is busted");
 
         NodeKeysManager {
-            secp_ctx: secp_ctx,
-            channel_master_key: channel_master_key,
-            node_secret: node_secret,
-            node_id: node_id,
-            seed: seed,
+            secp_ctx,
+            node_secret,
+            node_id,
+            destination_xpub,
+            channel_master_key,
+            channel_child_index: AtomicUsize::new(0),
+            seed,
         }
     }
 }
