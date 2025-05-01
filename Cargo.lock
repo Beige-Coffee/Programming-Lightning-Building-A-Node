@@ -352,7 +352,6 @@ dependencies = [
  "lightning-block-sync",
  "lightning-invoice",
  "lightning-net-tokio",
- "lightning-persister",
  "lightning-rapid-gossip-sync",
  "rand",
  "serde_json",
@@ -421,17 +420,6 @@ dependencies = [
  "bitcoin",
  "lightning",
  "tokio",
-]
-
-[[package]]
-name = "lightning-persister"
-version = "0.0.125"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "8d06283d41eb8e6d4af883cd602d91ab0c5f9e0c9a6be1c944b10e6f47176f20"
-dependencies = [
- "bitcoin",
- "lightning",
- "windows-sys",
 ]
 
 [[package]]

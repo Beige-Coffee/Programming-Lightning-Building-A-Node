@@ -14,7 +14,7 @@ use std::sync::atomic::{AtomicUsize, Ordering};
 pub struct NodeKeysManager {
 	secp_ctx: Secp256k1<secp256k1::All>,
 	node_secret: SecretKey,
-	node_id: PublicKey,
+	pub node_id: PublicKey,
 	destination_xpub: Xpub,
 	channel_master_key: Xpriv,
 	channel_child_index: u32,

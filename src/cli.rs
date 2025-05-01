@@ -1,6 +1,7 @@
 #![allow(dead_code, unused_imports, unused_variables, unused_must_use, unexpected_cfgs)]
 use crate::disk::{self, INBOUND_PAYMENTS_FNAME, OUTBOUND_PAYMENTS_FNAME};
 use crate::hex_utils;
+use crate::filesystem_store::FilesystemStore;
 use crate::{
 	ChainMonitor, ChannelManager, HTLCStatus, InboundPaymentInfoStorage, MillisatAmount,
 	NetworkGraph, OutboundPaymentInfoStorage, PaymentInfo, PeerManager,
@@ -25,7 +26,6 @@ use lightning::util::config::{ChannelHandshakeConfig, ChannelHandshakeLimits, Us
 use lightning::util::persist::KVStore;
 use lightning::util::ser::Writeable;
 use lightning_invoice::{Bolt11Invoice, Currency};
-use lightning_persister::fs_store::FilesystemStore;
 use std::env;
 use std::io::Write;
 use std::net::{SocketAddr, ToSocketAddrs};

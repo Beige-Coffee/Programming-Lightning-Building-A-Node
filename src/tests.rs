@@ -28,9 +28,9 @@ use crate::internal::types::{KeysManager, PeerManager, FileStore};
 use crate::commands::{open_channel, HTLCStatus, MillisatAmount as SatAmount, PaymentInfo,  OutboundPaymentInfoStorage, send_payment};
 use lightning_invoice::{Bolt11Invoice};
 use std::str::FromStr;
-use crate::keysmanager::{NodeKeysManager};
+use crate::keys_manager::{NodeKeysManager};
 use bitcoin::secp256k1::SecretKey;
-use fs_store::{FileStore as ExerciseFileStore};
+use filesystem_store::{FilesystemStore as ExerciseFileStore};
 use std::env::temp_dir;
 use lightning::io::{ErrorKind};
 
@@ -316,7 +316,7 @@ mod bitcoind_tests {
     fn test_simple_store() -> io::Result<()> {
         let mut temp_path = temp_dir();
         temp_path.push("simple_store_test");
-        let store = ExerciseFileStore::new(temp_path)?;
+        let store = ExerciseFileStore::new(temp_path);
 
         // Test write and read
         store.write("test", "user1", "key1", b"hello world")?;

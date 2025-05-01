@@ -1,4 +1,5 @@
 #![allow(dead_code, unused_imports, unused_variables, unused_must_use, unexpected_cfgs)]
+use crate::filesystem_store::FilesystemStore;
 use std::io::{BufReader, Read, Seek, SeekFrom};
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
@@ -8,8 +9,6 @@ use lightning::sign::{EntropySource, KeysManager, SpendableOutputDescriptor};
 use lightning::util::logger::Logger;
 use lightning::util::persist::KVStore;
 use lightning::util::ser::{Readable, WithoutLength, Writeable};
-
-use lightning_persister::fs_store::FilesystemStore;
 
 use crate::disk::FilesystemLogger;
 use crate::hex_utils;
