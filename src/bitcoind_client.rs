@@ -154,7 +154,7 @@ impl BroadcasterInterface for BitcoindClient {
 		for tx in txn {
 			let bitcoind_rpc_client = Arc::clone(&self.bitcoind_rpc_client);
 			let logger = Arc::clone(&self.logger);
-			self.main_runtime_handle.spawn(async move {
+			self.handle.spawn(async move {
 				let tx_json = serde_json::json!(tx);
 				match bitcoind_rpc_client
 					.call_method::<serde_json::Value>("sendrawtransaction", &[tx_json])
