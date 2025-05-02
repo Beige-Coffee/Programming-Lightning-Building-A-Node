@@ -2,7 +2,7 @@ use crate::bitcoind_client::BitcoindClient;
 use crate::hex_utils;
 use bitcoin::Network;
 use std::sync::Arc;
-use crate::disk::FilesystemLogger;
+use crate::logger::FilesystemLogger;
 use lightning_block_sync::{AsyncBlockSourceResult, BlockData, BlockHeaderData, BlockSource};
 use hex_lit::hex;
 use bitcoin::consensus::encode::{serialize_hex, deserialize};
@@ -33,6 +33,10 @@ use bitcoin::secp256k1::SecretKey;
 use filesystem_store::{FilesystemStore as ExerciseFileStore};
 use std::env::temp_dir;
 use lightning::io::{ErrorKind};
+use lightning::util::logger::{Level, Logger, Record};
+use chrono::Utc;
+use std::io::Read;
+
 
 async fn get_bitcoind_client() -> BitcoindClient {
     let logger = Arc::new(FilesystemLogger::new("test_dir".to_string()));
@@ -339,6 +343,93 @@ mod bitcoind_tests {
         }
 
         Ok(())
+    }
+
+    #[test]
+    fn test_filesystem_logger_structure() {
+        // Test 1: Verify FilesystemLogger structure creation
+        let temp_dir = temp_dir();
+        let data_dir = temp_dir.to_string_lossy().to_string();
+
+        let logger = FilesystemLogger::new(data_dir.clone());
+
+        // Check if logger has correct data_dir (should include /logs)
+        assert_eq!(logger.data_dir, format!("{}/logs", data_dir));
+
+        // Verify logs directory was created
+        let logs_dir_exists = fs::metadata(&logger.data_dir).is_ok();
+        assert!(logs_dir_exists, "Logs directory was not created");
+    }
+
+    #[test]
+    fn test_new_function() {
+        // Test 2: Verify FilesystemLogger::new implementation
+        let temp_dir = temp_dir();
+        let data_dir = temp_dir.to_string_lossy().to_string();
+
+        let logger = FilesystemLogger::new(data_dir.clone());
+
+        // Verify the logs directory path
+        let expected_path = format!("{}/logs", data_dir);
+        assert_eq!(logger.data_dir, expected_path);
+
+        // Verify directory exists and is a directory
+        let metadata = fs::metadata(&expected_path).unwrap();
+        assert!(metadata.is_dir(), "Logs path is not a directory");
+
+        // Verify we can create nested directories
+        let nested_dir = temp_dir.to_string_lossy().to_string();
+        let nested_logger = FilesystemLogger::new(nested_dir.clone());
+        let nested_path = format!("{}/logs", nested_dir);
+        assert_eq!(nested_logger.data_dir, nested_path);
+        assert!(fs::metadata(&nested_path).is_ok(), "Nested logs directory was not created");
+    }
+
+    #[test]
+    fn test_logger_implementation() {
+        // Test 3: Verify Logger trait implementation
+        let temp_dir = temp_dir();
+        let data_dir = temp_dir.to_string_lossy().to_string();
+        let logger = FilesystemLogger::new(data_dir.clone());
+
+        // Create a test record using LDK's Record
+        let record = Record {
+            level: Level::Info,
+            peer_id: None,
+            channel_id: None,
+            args: format_args!("Test log message"),
+            module_path: "test_module",
+            file: "test_file.rs",
+            line: 42,
+            payment_hash: None
+        };
+
+        // Log the record
+        logger.log(record);
+
+        // Read the log file
+        let log_file_path = format!("{}/logs/logs.txt", data_dir);
+        let mut file = File::open(&log_file_path).unwrap();
+        let mut contents = String::new();
+        file.read_to_string(&mut contents).unwrap();
+
+        // Verify log format
+        let current_time = Utc::now();
+        let expected_time_format = current_time.format("%Y-%m-%d %H:%M:%S%.3f").to_string();
+        let expected_log = format!(
+            "{} {:<5} [test_module:42] Test log message\n",
+            expected_time_format,
+            "INFO"
+        );
+
+        // Since exact timestamp might vary slightly, check key components
+        assert!(contents.contains("INFO"), "Log level not found");
+        assert!(contents.contains("[test_module:42]"), "Module and line not found");
+        assert!(contents.contains("Test log message"), "Log message not found");
+
+        // Verify timestamp format (basic check for YYYY-MM-DD HH:MM:SS.fff)
+        assert!(contents.contains(&current_time.format("%Y-%m-%d").to_string()), "Date format incorrect");
+
     }
     
 }

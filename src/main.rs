@@ -13,10 +13,11 @@ mod internal;
 mod commands;
 mod keys_manager;
 mod filesystem_store;
+mod logger;
 
 use crate::bitcoind_client::BitcoindClient;
-use crate::disk::FilesystemLogger;
 use crate::filesystem_store::FilesystemStore;
+use crate::logger::FilesystemLogger;
 use bitcoin::blockdata::transaction::Transaction;
 use bitcoin::consensus::encode;
 use bitcoin::io;

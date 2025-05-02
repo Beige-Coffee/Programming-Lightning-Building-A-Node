@@ -1,5 +1,6 @@
 #![allow(dead_code, unused_imports, unused_variables, unused_must_use, unexpected_cfgs)]
 use crate::filesystem_store::FilesystemStore;
+use crate::logger::FilesystemLogger;
 use std::io::{BufReader, Read, Seek, SeekFrom};
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
@@ -10,7 +11,6 @@ use lightning::util::logger::Logger;
 use lightning::util::persist::KVStore;
 use lightning::util::ser::{Readable, WithoutLength, Writeable};
 
-use crate::disk::FilesystemLogger;
 use crate::hex_utils;
 use crate::OutputSweeper;
 

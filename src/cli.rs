@@ -2,6 +2,7 @@
 use crate::disk::{self, INBOUND_PAYMENTS_FNAME, OUTBOUND_PAYMENTS_FNAME};
 use crate::hex_utils;
 use crate::filesystem_store::FilesystemStore;
+use crate::logger::FilesystemLogger;
 use crate::{
 	ChainMonitor, ChannelManager, HTLCStatus, InboundPaymentInfoStorage, MillisatAmount,
 	NetworkGraph, OutboundPaymentInfoStorage, PaymentInfo, PeerManager,
@@ -51,7 +52,7 @@ pub(crate) fn poll_for_user_input(
 	chain_monitor: Arc<ChainMonitor>, keys_manager: Arc<KeysManager>,
 	network_graph: Arc<NetworkGraph>, inbound_payments: Arc<Mutex<InboundPaymentInfoStorage>>,
 	outbound_payments: Arc<Mutex<OutboundPaymentInfoStorage>>, ldk_data_dir: String,
-	network: Network, logger: Arc<disk::FilesystemLogger>, fs_store: Arc<FilesystemStore>,
+	network: Network, logger: Arc<FilesystemLogger>, fs_store: Arc<FilesystemStore>,
 ) {
 	println!(
 		"LDK startup successful. Enter \"help\" to view available commands. Press Ctrl-D to quit."
@@ -850,7 +851,7 @@ fn keysend<E: EntropySource>(
 fn get_invoice(
 	amt_msat: u64, inbound_payments: &mut InboundPaymentInfoStorage,
 	channel_manager: &ChannelManager, keys_manager: Arc<KeysManager>, network: Network,
-	expiry_secs: u32, logger: Arc<disk::FilesystemLogger>,
+	expiry_secs: u32, logger: Arc<FilesystemLogger>,
 ) {
 	let currency = match network {
 		Network::Bitcoin => Currency::Bitcoin,

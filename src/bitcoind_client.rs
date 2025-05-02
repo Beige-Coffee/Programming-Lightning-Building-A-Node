@@ -3,7 +3,7 @@ use crate::convert::{
 	BlockchainInfo, FeeResponse, FundedTx, ListUnspentResponse, MempoolMinFeeResponse, NewAddress,
 	RawTx, SignedTx, MempoolInfo
 };
-use crate::disk::FilesystemLogger;
+use crate::logger::FilesystemLogger;
 use crate::hex_utils;
 use base64;
 use bitcoin::address::Address;
