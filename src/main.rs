@@ -10,6 +10,7 @@ mod tests;
 mod networking;
 mod events;
 mod internal;
+mod intro;
 mod commands;
 mod keys_manager;
 mod filesystem_store;
