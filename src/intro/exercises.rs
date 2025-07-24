@@ -55,7 +55,7 @@ fn main() {
 
     let version_bits = String::from("02000000");
 
-    let bip68_compatible = is_bip68_compatible(version_bits);
+    let bip68_compatible = is_bip68_compatible(version_bits.clone());
 
     println!("Is {:?} BIP 68 compatible? {:?}",
             version_bits, bip68_compatible);

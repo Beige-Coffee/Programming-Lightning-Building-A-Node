@@ -25,7 +25,7 @@ impl NodeKeysManager {
 	pub(crate) fn new(seed: [u8; 32]) -> NodeKeysManager {
 		let secp_ctx = Secp256k1::new();
 
-		let master_key = match Xpriv::new_master(Network::Testnet, &seed) {
+		let master_key = match Xpriv::new_master(Network::Regtest, &seed) {
 			Ok(key) => key,
 			Err(_) => panic!("Your RNG is busted"),
 		};

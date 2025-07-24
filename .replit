@@ -1,5 +1,5 @@
-run = "cargo test intro::tests -- --nocapture"
-#run = "cargo test"
+#run = "cargo test intro::tests -- --nocapture"
+run = "cargo test"
 
 hidden = [
   "target",
