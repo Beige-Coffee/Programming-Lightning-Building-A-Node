@@ -346,7 +346,7 @@ mod bitcoind_tests {
     }
 
     #[test]
-    fn test_filesystem_logger_structure() {
+    fn test_01_filesystem_logger_structure() {
         // Test 1: Verify FilesystemLogger structure creation
         let temp_dir = temp_dir();
         let data_dir = temp_dir.to_string_lossy().to_string();
@@ -386,7 +386,7 @@ mod bitcoind_tests {
     }
 
     #[test]
-    fn test_logger_implementation() {
+    fn test_02_logger_implementation() {
         // Test 3: Verify Logger trait implementation
         let temp_dir = temp_dir();
         let data_dir = temp_dir.to_string_lossy().to_string();

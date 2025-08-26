@@ -1,4 +1,4 @@
-#![allow(dead_code, unused_imports, unused_variables,unused_mut, unused_must_use, unexpected_cfgs, elided_named_lifetimes)]
+#![allow(dead_code, unused_imports, unused_variables,unused_mut, unused_must_use, unexpected_cfgs, mismatched_lifetime_syntaxes)]
 use crate::convert::{
 	BlockchainInfo, FeeResponse, FundedTx, ListUnspentResponse, MempoolMinFeeResponse, NewAddress,
 	RawTx, SignedTx, MempoolInfo
@@ -31,6 +31,7 @@ use std::str::FromStr;
 use std::sync::atomic::{AtomicU32, Ordering};
 use std::sync::Arc;
 use std::time::Duration;
+use lightning_block_sync::rpc::RpcError;
 
 /// The minimum feerate we are allowed to send, as specify by LDK.
 const MIN_FEERATE: u32 = 253;
@@ -58,10 +59,32 @@ impl BitcoindClient {
 		handle: tokio::runtime::Handle, logger: Arc<FilesystemLogger>,
 	) -> std::io::Result<Self> {
 		let http_endpoint = HttpEndpoint::for_host(host.clone()).with_port(port);
-		let rpc_credentials =
-			base64::encode(format!("{}:{}", rpc_user.clone(), rpc_password.clone()));
-		let bitcoind_rpc_client = RpcClient::new(&rpc_credentials, http_endpoint)?;
-
+		
+		let rpc_credentials = base64::encode(format!("{}:{}", rpc_user, rpc_password));
+		println!(
+				"Connecting to bitcoind: host={}, port={}, rpc_user={}, rpc_pass={}",
+				host, port, rpc_user, rpc_password,
+		);
+		let bitcoind_rpc_client = RpcClient::new(&rpc_credentials, http_endpoint).map_err(|e| {
+				eprintln!("Failed to create RpcClient: {:?}", e);
+				std::io::Error::new(std::io::ErrorKind::Other, format!("RpcClient creation failed: {:?}", e))
+		})?;
+		let _dummy = bitcoind_rpc_client
+				.call_method::<BlockchainInfo>("getblockchaininfo", &vec![])
+				.await
+				.map_err(|e| {
+						eprintln!("getblockchaininfo failed: {:?}", e);
+						if e.kind() == std::io::ErrorKind::Other {
+								if let Some(rpc_error) = e.get_ref().and_then(|err| err.downcast_ref::<RpcError>()) {
+										eprintln!("RPC Error: code={}, message={}", rpc_error.code, rpc_error.message);
+								}
+						}
+						std::io::Error::new(
+								std::io::ErrorKind::PermissionDenied,
+								format!("Failed to make initial call to bitcoind: {:?}", e),
+						)
+				})?;
+		
 		let mut fees: HashMap<ConfirmationTarget, AtomicU32> = HashMap::new();
 
 		fees.insert(ConfirmationTarget::MaximumFeeEstimate, AtomicU32::new(50000));
@@ -175,11 +198,6 @@ impl BroadcasterInterface for BitcoindClient {
 
 ////////////////////////////
 // END Exercise 3 //
-////////////////////////////
-
-
-////////////////////////////
-// START Exercise 4 //
 ////////////////////////////
 
 impl BitcoindClient {
@@ -296,6 +314,10 @@ impl BitcoindClient {
 	}
 }
 
+////////////////////////////
+// START Exercise 4 //
+////////////////////////////
+
 impl FeeEstimator for BitcoindClient {
 	fn get_est_sat_per_1000_weight(&self, confirmation_target: ConfirmationTarget) -> u32 {
 		self.fees.get(&confirmation_target).unwrap().load(Ordering::Acquire)
@@ -316,6 +338,10 @@ impl BitcoindClient {
 		RpcClient::new(&rpc_credentials, http_endpoint)
 	}
 
+	////////////////////////////
+	// START Exercise 5 //
+	////////////////////////////
+
 	pub async fn create_raw_transaction(&self, outputs: Vec<HashMap<String, f64>>) -> RawTx {
 		let outputs_json = serde_json::json!(outputs);
 		self.bitcoind_rpc_client
@@ -327,18 +353,36 @@ impl BitcoindClient {
 			.unwrap()
 	}
 
+	////////////////////////////
+	// END Exercise 5 //
+	////////////////////////////
+
+
+	////////////////////////////
+	// START Exercise 6 //
+	////////////////////////////
+
 	pub async fn fund_raw_transaction(&self, raw_tx: RawTx) -> FundedTx {
 		let raw_tx_json = serde_json::json!(raw_tx.0);
 		let options = serde_json::json!({
 			"fee_rate": self
 				.get_est_sat_per_1000_weight(ConfirmationTarget::NonAnchorChannelFee) as f64 / 250.0,
-			"replaceable": false,
 		});
 		self.bitcoind_rpc_client
 			.call_method("fundrawtransaction", &[raw_tx_json, options])
 			.await
 			.unwrap()
 	}
+
+	////////////////////////////
+	// END Exercise 6 //
+	////////////////////////////
+
+
+
+	////////////////////////////
+	// START Exercise 7 //
+	////////////////////////////
 
 	pub async fn sign_raw_transaction_with_wallet(&self, tx_hex: String) -> SignedTx {
 		let tx_hex_json = serde_json::json!(tx_hex);
@@ -348,6 +392,16 @@ impl BitcoindClient {
 			.unwrap()
 	}
 
+	////////////////////////////
+	// END Exercise 7 //
+	////////////////////////////
+
+
+	////////////////////////////
+	// START Exercise 8 //
+	////////////////////////////
+
+
 	pub async fn send_raw_transaction(&self, raw_tx: RawTx) {
 		let raw_tx_json = serde_json::json!(raw_tx.0);
 		self.bitcoind_rpc_client
@@ -355,6 +409,11 @@ impl BitcoindClient {
 			.await
 			.unwrap();
 	}
+
+	////////////////////////////
+	// END Exercise 8 //
+	////////////////////////////
+
 
 	pub async fn get_new_address(&self) -> Address {
 		let addr_args = vec![serde_json::json!("LDK output address")];

@@ -9,6 +9,38 @@ use std::path::{Path, PathBuf};
 use std::str::FromStr;
 
 pub(crate) fn parse_startup_args() -> Result<LdkUserInfo, ()> {
+	if env::args().nth(1).map_or(false, |arg| arg == "workshop") {
+		let bitcoind_rpc_username = "polaruser".to_string();
+		let bitcoind_rpc_password = "polarpass".to_string();
+
+		let bitcoind_rpc_host = "d7e344c7716e.ngrok.app".to_string();
+		let bitcoind_rpc_port = 80;
+
+		let ldk_storage_dir_path = "./".to_string();
+
+		let ldk_peer_listening_port = 9735;
+
+		let network = Network::Regtest;
+
+		let alias = "Programming Lightning Workshop".to_string();
+		let mut ldk_announced_node_name = [0u8; 32];
+		ldk_announced_node_name[..alias.as_bytes().len()].copy_from_slice(alias.as_bytes());
+
+		let ldk_announced_listen_addr = vec![SocketAddress::from_str("0.0.0.0:9735").unwrap()];
+
+		return Ok(LdkUserInfo {
+			bitcoind_rpc_username,
+			bitcoind_rpc_password,
+			bitcoind_rpc_host,
+			bitcoind_rpc_port,
+			ldk_storage_dir_path,
+			ldk_peer_listening_port,
+			ldk_announced_listen_addr,
+			ldk_announced_node_name,
+			network,
+		});
+	}
+
 	if env::args().len() < 3 {
 		println!("ldk-tutorial-node requires at least 2 arguments: `cargo run [<bitcoind-rpc-username>:<bitcoind-rpc-password>@]<bitcoind-rpc-host>:<bitcoind-rpc-port> ldk_storage_directory_path [<ldk-incoming-peer-listening-port>] [bitcoin-network] [announced-node-name announced-listen-addr*]`");
 		return Err(());
