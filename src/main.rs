@@ -15,6 +15,7 @@ mod commands;
 mod keys_manager;
 mod filesystem_store;
 mod logger;
+mod bdk_wallet;
 
 use crate::bitcoind_client::BitcoindClient;
 use crate::filesystem_store::FilesystemStore;
@@ -71,6 +72,11 @@ use std::path::Path;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex, RwLock};
 use std::time::{Duration, SystemTime};
+use lightning::log_error;
+use ::bdk_wallet::template::Bip84;
+use ::bdk_wallet::KeychainKind;
+use ::bdk_wallet::Wallet as BdkWallet;
+use lightning::util::logger::Logger;
 
 #[derive(Copy, Clone)]
 pub(crate) enum HTLCStatus {
@@ -641,6 +647,42 @@ async fn start_ldk() {
 		}
 		key
 	};
+
+	// Initialize the on-chain wallet 
+	let xprv = bitcoin::bip32::Xpriv::new_master(args.network, &keys_seed).map_err(|e| {
+		log_error!(logger, "Failed to derive master secret: {}", e);
+	}).unwrap();
+
+	let descriptor = Bip84(xprv, KeychainKind::External);
+	let change_descriptor = Bip84(xprv, KeychainKind::Internal);
+	let on_chain_wallet_file_path = "on_chain_wallet.sqlite3";
+	let mut conn = ::bdk_wallet::rusqlite::Connection::open(on_chain_wallet_file_path).map_err(|e| {
+		log_error!(logger, "Failed to establish on-chain wallet database connection: {}", e);
+	}).unwrap();
+
+	let wallet_opt = BdkWallet::load()
+		.descriptor(KeychainKind::External, Some(descriptor.clone()))
+		.descriptor(KeychainKind::Internal, Some(change_descriptor.clone()))
+		.extract_keys()
+		.check_network(args.network)
+		.load_wallet(&mut conn)
+		.map_err(|e| {
+			log_error!(logger, "Failed to load BDK wallet: {:?}", e);
+		})
+		.unwrap();
+
+	let bdk_wallet = match wallet_opt {
+		Some(wallet) => wallet,
+		None => BdkWallet::create(descriptor, change_descriptor)
+			.network(args.network)
+			.create_wallet(&mut conn)
+			.map_err(|e| {
+				log_error!(logger, "Failed to set up wallet: {}", e);
+			})
+			.unwrap()
+	};
+
+
 	let cur = SystemTime::now().duration_since(SystemTime::UNIX_EPOCH).unwrap();
 	let keys_manager = Arc::new(KeysManager::new(&keys_seed, cur.as_secs(), cur.subsec_nanos()));
 
