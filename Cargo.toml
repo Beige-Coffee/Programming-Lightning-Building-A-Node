@@ -1,7 +1,7 @@
 [package]
-name = "ldk-sample"
+name = "node-workshop"
 version = "0.1.0"
-authors = ["Valentine Wallace <vwallace@protonmail.com>"]
+authors = ["Austin"]
 license = "MIT OR Apache-2.0"
 edition = "2018"
 
@@ -14,6 +14,10 @@ lightning-invoice = { version = "0.32.0" }
 lightning-net-tokio = { version = "0.0.125" }
 lightning-background-processor = { version = "0.0.125", features = [ "futures" ] }
 lightning-rapid-gossip-sync = { version = "0.0.125" }
+bdk_wallet = { version = "2.1.0", features = ["std", "keys-bip39", "rusqlite"]}
+bdk_bitcoind_rpc = { version = "0.21.0" }
+bdk_chain = { version = "0.23.1", default-features = false, features = ["std"] }
+bdk_core = { version = "0.6.1" }
 
 base64 = "0.13.0"
 bitcoin = "0.32"
@@ -21,6 +25,7 @@ bitcoin-bech32 = "0.12"
 bech32 = "0.8"
 libc = "0.2"
 hex_lit = "0.1.1"
+ctrlc = "3.4.6"
 
 chrono = { version = "0.4", default-features = false, features = ["clock"] }
 rand = "0.4"
