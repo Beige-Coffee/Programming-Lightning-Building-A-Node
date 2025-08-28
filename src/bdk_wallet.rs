@@ -209,12 +209,21 @@ where
 
     }
 
-    pub async fn get_address(&self) -> Address {
+    pub fn get_address(&self) -> Address {
         let mut locked_wallet = self.inner.lock().unwrap();
 
         let address_info = locked_wallet.reveal_next_address(KeychainKind::External);
 
         address_info.address
+    }
+
+    pub fn get_balance(&self) -> Balance {
+        let mut locked_wallet = self.inner.lock().unwrap();
+
+        let balance = locked_wallet.balance();
+
+        balance
+
     }
 }
 
