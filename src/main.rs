@@ -197,14 +197,14 @@ type OnionMessenger =
 
 pub(crate) type BumpTxEventHandler = BumpTransactionEventHandler<
 	Arc<BitcoindClient>,
-	Arc<Wallet<Arc<BitcoindClient>, Arc<FilesystemLogger>>>,
+	Arc<Wallet<Arc<LdkOnChainWallet>, Arc<FilesystemLogger>>>,
 	Arc<KeysManager>,
 	Arc<FilesystemLogger>,
 >;
 
 pub(crate) type OutputSweeper = ldk_sweep::OutputSweeper<
 	Arc<BitcoindClient>,
-	Arc<BitcoindClient>,
+	Arc<LdkOnChainWallet>,
 	Arc<BitcoindClient>,
 	Arc<dyn Filter + Send + Sync>,
 	Arc<FilesystemStore>,
@@ -705,7 +705,7 @@ async fn start_ldk() {
 
 	let bump_tx_event_handler = Arc::new(BumpTransactionEventHandler::new(
 		Arc::clone(&broadcaster),
-		Arc::new(Wallet::new(Arc::clone(&bitcoind_client), Arc::clone(&logger))),
+		Arc::new(Wallet::new(Arc::clone(&on_chain_wallet), Arc::clone(&logger))),
 		Arc::clone(&keys_manager),
 		Arc::clone(&logger),
 	));
@@ -830,7 +830,7 @@ async fn start_ldk() {
 				fee_estimator.clone(),
 				None,
 				keys_manager.clone(),
-				bitcoind_client.clone(),
+				on_chain_wallet.clone(),
 				fs_store.clone(),
 				logger.clone(),
 			);
@@ -842,7 +842,7 @@ async fn start_ldk() {
 				fee_estimator.clone(),
 				None,
 				keys_manager.clone(),
-				bitcoind_client.clone(),
+				on_chain_wallet.clone(),
 				fs_store.clone(),
 				logger.clone(),
 			);
