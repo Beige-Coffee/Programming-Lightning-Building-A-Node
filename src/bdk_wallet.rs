@@ -173,7 +173,7 @@ where
         Ok(())
     }
 
-    pub async fn create_transaction(&self, outputs: Vec<HashMap<ScriptBuf, u64>>) -> Transaction {
+    pub fn create_transaction(&self, outputs: Vec<HashMap<ScriptBuf, u64>>) -> Transaction {
         
         // get lock on wallet
         let mut wallet = self.inner.lock().unwrap();
