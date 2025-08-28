@@ -1,73 +1,30 @@
-#run = "cargo test intro::tests -- --nocapture"
-run = "cargo test"
-
-hidden = [
-  "target",
-  ".tutorial",
-  "db",
-  "start.sh",
-  "bitcoin.conf",
-  "electrs.toml",
-  ".config",
-  "build.rs",
-  "src/lib.solution.rs",
-  "src/internal",
-  "src/test.rs",
-  ".gitignore",
-  "Cargo.toml",
-  "Cargo.lock",
-]
-entrypoint = ""
-onBoot = ["bash", "start.sh"]
-
-[packager]
-language = "rust"
-
-[packager.features]
-packageSearch = true
-
-[nix]
-channel = "stable-22_11"
-
-[gitHubImport]
-requiredFiles = [".replit", "replit.nix"]
-
-[languages]
-
-[languages.rust]
-pattern = "**/*.rs"
-
-[languages.rust.languageServer]
-start = "rust-analyzer"
+modules = ["rust"]
 
 [[ports]]
-localPort = 8080
-externalPort = 8080
-
-[[ports]]
-localPort = 8332
-externalPort = 3002
-exposeLocalhost = true
-
-[[ports]]
-localPort = 8333
-externalPort = 3001
-
-[[ports]]
-localPort = 9735
-externalPort = 3003
-
-[[ports]]
-localPort = 18443
+localPort = 9733
 externalPort = 80
 
 [[ports]]
-localPort = 18444
+localPort = 9735
 externalPort = 3000
-
-[deployment]
-deploymentTarget = "cloudrun"
-run = ["sh", "-c", "cargo test"]
 
 [workflows]
 runButton = "Run Tests"
+
+[[workflows.workflow]]
+name = "Start Node"
+mode = "sequential"
+author = 17531197
+
+[[workflows.workflow.tasks]]
+task = "shell.exec"
+args = "cargo run workshop"
+
+[[workflows.workflow]]
+name = "Run Tests"
+mode = "sequential"
+author = 17531197
+
+[[workflows.workflow.tasks]]
+task = "shell.exec"
+args = "cargo test"

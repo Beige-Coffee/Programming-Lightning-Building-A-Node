@@ -69,21 +69,6 @@ impl BitcoindClient {
 				eprintln!("Failed to create RpcClient: {:?}", e);
 				std::io::Error::new(std::io::ErrorKind::Other, format!("RpcClient creation failed: {:?}", e))
 		})?;
-		let _dummy = bitcoind_rpc_client
-				.call_method::<BlockchainInfo>("getblockchaininfo", &vec![])
-				.await
-				.map_err(|e| {
-						eprintln!("getblockchaininfo failed: {:?}", e);
-						if e.kind() == std::io::ErrorKind::Other {
-								if let Some(rpc_error) = e.get_ref().and_then(|err| err.downcast_ref::<RpcError>()) {
-										eprintln!("RPC Error: code={}, message={}", rpc_error.code, rpc_error.message);
-								}
-						}
-						std::io::Error::new(
-								std::io::ErrorKind::PermissionDenied,
-								format!("Failed to make initial call to bitcoind: {:?}", e),
-						)
-				})?;
 		
 		let mut fees: HashMap<ConfirmationTarget, AtomicU32> = HashMap::new();
 

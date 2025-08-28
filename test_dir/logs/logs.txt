@@ -181,3 +181,6 @@ Transactions: ["0100000001d611ad58b2f5bc0db7d15dfde4f497d6482d1b4a1e8c462ef077d4
 2025-08-26 01:52:06.486 ERROR [ldk_sample::bitcoind_client:191] Failed to broadcast transaction: Custom { kind: Other, error: RpcError { code: -25, message: "bad-txns-inputs-missingorspent" } }
 2025-08-26 02:06:35.300 ERROR [ldk_sample::bitcoind_client:191] Failed to broadcast transaction: Custom { kind: Other, error: RpcError { code: -25, message: "bad-txns-inputs-missingorspent" } }
 2025-08-26 02:06:56.401 ERROR [ldk_sample::bitcoind_client:191] Failed to broadcast transaction: Custom { kind: Other, error: RpcError { code: -25, message: "bad-txns-inputs-missingorspent" } }
+2025-08-28 19:06:42.270 ERROR [node_workshop::bitcoind_client:176] Failed to broadcast transaction: Os { code: 111, kind: ConnectionRefused, message: "Connection refused" }
+2025-08-28 19:11:25.928 ERROR [node_workshop::bitcoind_client:176] Failed to broadcast transaction: Os { code: 111, kind: ConnectionRefused, message: "Connection refused" }
+2025-08-28 19:12:06.025 ERROR [node_workshop::bitcoind_client:176] Failed to broadcast transaction: Os { code: 111, kind: ConnectionRefused, message: "Connection refused" }

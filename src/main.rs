@@ -236,8 +236,10 @@ async fn handle_ldk_events(
 			// channel.
 			let mut outputs = vec![HashMap::with_capacity(1)];
 			outputs[0].insert(output_script, channel_value_satoshis as u64);
+
+			let confirmation_target = ConfirmationTarget::AnchorChannelFee;
 			
-			let final_tx: Transaction = on_chain_wallet.create_transaction(outputs);
+			let final_tx: Transaction = on_chain_wallet.create_transaction(outputs, confirmation_target);
 
 			// Give the funding transaction back to LDK for opening the channel.
 			if channel_manager
@@ -585,6 +587,8 @@ async fn start_ldk() {
 		},
 	};
 
+	
+
 	// Check that the bitcoind we've connected to is running the network we expect
 	let bitcoind_chain = bitcoind_client.get_blockchain_info().await.chain;
 	if bitcoind_chain
@@ -617,6 +621,7 @@ async fn start_ldk() {
 	// The key seed that we use to derive the node privkey (that corresponds to the node pubkey) and
 	// other secret key material.
 	let keys_seed_path = format!("{}/keys_seed", ldk_data_dir.clone());
+	//let keys_seed_path = format!("{}/keys_seed", "test_dir");
 	let keys_seed = if let Ok(seed) = fs::read(keys_seed_path.clone()) {
 		assert_eq!(seed.len(), 32);
 		let mut key = [0; 32];
@@ -647,6 +652,7 @@ async fn start_ldk() {
 	let descriptor = Bip84(xprv, KeychainKind::External);
 	let change_descriptor = Bip84(xprv, KeychainKind::Internal);
 	let on_chain_wallet_file_path = "on_chain_wallet.sqlite3";
+	//let on_chain_wallet_file_path = "./test_dir/test_wallet.sqlite3";
 	let mut conn = ::bdk_wallet::rusqlite::Connection::open(on_chain_wallet_file_path).map_err(|e| {
 		log_error!(logger, "Failed to establish on-chain wallet database connection: {}", e);
 	}).unwrap();
@@ -694,8 +700,6 @@ async fn start_ldk() {
             interval.tick().await;
             if let Err(e) = wallet_sync.sync_wallet() {
                 println!("Failed to sync wallet: {}", e);
-            } else {
-                println!("Wallet sync completed");
             }
         }
     });

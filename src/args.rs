@@ -8,39 +8,43 @@ use std::fs;
 use std::path::{Path, PathBuf};
 use std::str::FromStr;
 
+pub(crate) fn get_config_info() -> LdkUserInfo {
+	let bitcoind_rpc_username = "polaruser".to_string();
+	let bitcoind_rpc_password = "polarpass".to_string();
+
+	let bitcoind_rpc_host = "ff6566b4ae0f.ngrok.app".to_string();
+	let bitcoind_rpc_port = 80;
+	//let bitcoind_rpc_host = "127.0.0.1".to_string();
+	//let bitcoind_rpc_port = 18443;
+
+	let ldk_storage_dir_path = "./".to_string();
+
+	let ldk_peer_listening_port = 9733;
+
+	let network = Network::Regtest;
+
+	let alias = "Programming Lightning Workshop".to_string();
+	let mut ldk_announced_node_name = [0u8; 32];
+	ldk_announced_node_name[..alias.as_bytes().len()].copy_from_slice(alias.as_bytes());
+
+	let ldk_announced_listen_addr = vec![SocketAddress::from_str("0.0.0.0:9733").unwrap()];
+
+	return LdkUserInfo {
+		bitcoind_rpc_username,
+		bitcoind_rpc_password,
+		bitcoind_rpc_host,
+		bitcoind_rpc_port,
+		ldk_storage_dir_path,
+		ldk_peer_listening_port,
+		ldk_announced_listen_addr,
+		ldk_announced_node_name,
+		network,
+	};
+}
+
 pub(crate) fn parse_startup_args() -> Result<LdkUserInfo, ()> {
 	if env::args().nth(1).map_or(false, |arg| arg == "workshop") {
-		let bitcoind_rpc_username = "polaruser".to_string();
-		let bitcoind_rpc_password = "polarpass".to_string();
-
-		//let bitcoind_rpc_host = "24a8612668f3.ngrok.app".to_string();
-		//let bitcoind_rpc_port = 80;
-		let bitcoind_rpc_host = "127.0.0.1".to_string();
-		let bitcoind_rpc_port = 18443;
-
-		let ldk_storage_dir_path = "./".to_string();
-
-		let ldk_peer_listening_port = 9733;
-
-		let network = Network::Regtest;
-
-		let alias = "Programming Lightning Workshop".to_string();
-		let mut ldk_announced_node_name = [0u8; 32];
-		ldk_announced_node_name[..alias.as_bytes().len()].copy_from_slice(alias.as_bytes());
-
-		let ldk_announced_listen_addr = vec![SocketAddress::from_str("0.0.0.0:9733").unwrap()];
-
-		return Ok(LdkUserInfo {
-			bitcoind_rpc_username,
-			bitcoind_rpc_password,
-			bitcoind_rpc_host,
-			bitcoind_rpc_port,
-			ldk_storage_dir_path,
-			ldk_peer_listening_port,
-			ldk_announced_listen_addr,
-			ldk_announced_node_name,
-			network,
-		});
+		return Ok(get_config_info())
 	}
 
 	if env::args().len() < 3 {

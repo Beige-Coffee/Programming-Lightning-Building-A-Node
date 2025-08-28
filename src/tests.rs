@@ -11,6 +11,7 @@ use lightning::chain::chaininterface::{BroadcasterInterface, ConfirmationTarget,
 use std::collections::HashMap;
 use super::*;
 use std::path::Path;
+use bitcoin::hash_types::Txid;
 use std::sync::atomic::Ordering;
 use tokio::net::TcpStream;
 use tokio::time::{timeout, Duration};
@@ -36,21 +37,111 @@ use lightning::io::{ErrorKind};
 use lightning::util::logger::{Level, Logger, Record};
 use chrono::Utc;
 use std::io::Read;
+use crate::{LdkOnChainWallet};
 
 
 async fn get_bitcoind_client() -> BitcoindClient {
     let logger = Arc::new(FilesystemLogger::new("test_dir".to_string()));
+    
+    let args = args::get_config_info();
+
     let client = BitcoindClient::new(
-        "localhost".to_string(),
-        18443,
-        "bitcoind".to_string(),
-        "bitcoind".to_string(),
-        Network::Regtest,
+        args.bitcoind_rpc_host.clone(),
+        args.bitcoind_rpc_port,
+        args.bitcoind_rpc_username.clone(),
+        args.bitcoind_rpc_password.clone(),
+        args.network,
         tokio::runtime::Handle::current(),
-        logger,
+        Arc::clone(&logger),
     ).await.unwrap();
 
     client
+}
+
+async fn get_wallet() -> Arc<LdkOnChainWallet> {
+
+    let args = args::get_config_info();
+
+    let logger = Arc::new(FilesystemLogger::new("test_dir".to_string()));
+  
+    let keys_seed_path = format!("{}/keys_seed", "test_dir");
+    let keys_seed = if let Ok(seed) = fs::read(keys_seed_path.clone()) {
+        assert_eq!(seed.len(), 32);
+        let mut key = [0; 32];
+        key.copy_from_slice(&seed);
+        key
+    } else {
+        let mut key = [0; 32];
+        thread_rng().fill_bytes(&mut key);
+        match File::create(keys_seed_path.clone()) {
+            Ok(mut f) => {
+                std::io::Write::write_all(&mut f, &key)
+                    .expect("Failed to write node keys seed to disk");
+                f.sync_all().expect("Failed to sync node keys seed to disk");
+            },
+            Err(e) => {
+                println!("ERROR: Unable to create keys seed file {}: {}", keys_seed_path, e);
+            },
+        }
+        key
+    };
+
+    // Initialize the on-chain wallet 
+    let xprv = bitcoin::bip32::Xpriv::new_master(Network::Regtest, &keys_seed).map_err(|e| {
+        log_error!(logger, "Failed to derive master secret: {}", e);
+    }).unwrap();
+
+    let descriptor = Bip84(xprv, KeychainKind::External);
+    let change_descriptor = Bip84(xprv, KeychainKind::Internal);
+    let on_chain_wallet_file_path = "./test_dir/test_wallet.sqlite3";
+    let mut conn = ::bdk_wallet::rusqlite::Connection::open(on_chain_wallet_file_path).map_err(|e| {
+        log_error!(logger, "Failed to establish on-chain wallet database connection: {}", e);
+    }).unwrap();
+
+    let wallet_opt = BdkWallet::load()
+        .descriptor(KeychainKind::External, Some(descriptor.clone()))
+        .descriptor(KeychainKind::Internal, Some(change_descriptor.clone()))
+        .extract_keys()
+        .check_network(Network::Regtest)
+        .load_wallet(&mut conn)
+        .map_err(|e| {
+            log_error!(logger, "Failed to load BDK wallet: {:?}", e);
+        })
+        .unwrap();
+
+    let bdk_wallet = match wallet_opt {
+        Some(wallet) => wallet,
+        None => BdkWallet::create(descriptor, change_descriptor)
+            .network(Network::Regtest)
+            .create_wallet(&mut conn)
+            .map_err(|e| {
+                log_error!(logger, "Failed to set up wallet: {}", e);
+            })
+            .unwrap()
+    };
+
+    let bitcoind_client = Arc::new(get_bitcoind_client().await);
+
+
+    let on_chain_wallet = Arc::new(OnChainWallet::new(
+        bdk_wallet,
+        args.bitcoind_rpc_host.clone(),
+        args.bitcoind_rpc_port,
+        args.bitcoind_rpc_username.clone(),
+        on_chain_wallet_file_path.to_string(),
+        args.bitcoind_rpc_password.clone(),
+        bitcoind_client.clone(),
+        bitcoind_client.clone(),
+        Arc::clone(&logger),
+        ));
+
+    let address = on_chain_wallet.get_address();
+    println!("Test On Chain Wallet Address: {:?}", address);
+
+    let balance = on_chain_wallet.get_balance();
+    println!("Test On Chain Wallet Balance: {:?}", balance);
+
+    on_chain_wallet
 }
 
 #[cfg(test)]
@@ -58,7 +149,7 @@ mod bitcoind_tests {
     use super::*;
     
     #[tokio::test]
-    async fn test_bitcoind_client_creation() {
+    async fn test_03_bitcoind_client_creation() {
         let client = get_bitcoind_client().await;
         let blockchain_info = client.get_blockchain_info().await.chain;
         
@@ -69,7 +160,7 @@ mod bitcoind_tests {
     }
 
 #[tokio::test]
-    async fn test_block_source() {
+    async fn test_04_block_source() {
         let client = get_bitcoind_client().await;
     
         let best_block_user = client.get_best_block().await.unwrap().0;
@@ -112,7 +203,7 @@ mod bitcoind_tests {
 
 
     #[tokio::test]
-    async fn test_broadcast() {
+    async fn test_05_broadcast() {
 
         let client = get_bitcoind_client().await;
 
@@ -127,7 +218,7 @@ mod bitcoind_tests {
     }
 
     #[tokio::test]
-    async fn test_fees() {
+    async fn test_06_fees() {
 
         let client = get_bitcoind_client().await;
 
@@ -145,26 +236,33 @@ mod bitcoind_tests {
     }
 
     #[tokio::test]
-    async fn test_create_raw_transaction() {
+    async fn test_07_create_transaction() {
 
-        let client = get_bitcoind_client().await;
+        let wallet = get_wallet().await;
 
-        let addr = client.get_new_address().await;
+        let script = ScriptBuf::new();
+        let sats: u64 = 1000;
+        
+        let mut output = vec![HashMap::with_capacity(1)];
+        output[0].insert(script, sats);
 
-        let mut outputs = vec![HashMap::with_capacity(1)];
-        outputs[0].insert(addr.to_string(), 500_000.0 / 100_000_000.0);
+        let confirmation_target = ConfirmationTarget::MaximumFeeEstimate;
 
-        let raw_tx = client.create_raw_transaction(outputs).await;
+        let tx = wallet.create_transaction(output, confirmation_target);
+
+        let tx_id = "d9334caed6503ebc710d13a5f663f03bec531026d2bc786befdfdb8ef5aad721"
+            .parse::<Txid>()
+            .unwrap();
 
         assert_eq!(
-            raw_tx.0.len(),
-            82
+            tx.compute_txid(),
+            tx_id,
         );
 
     }
 
     #[tokio::test]
-    async fn test_start_listener() {
+    async fn test_10_start_listener() {
         // Setup
         let listening_port = 9735; // Fixed port instead of 0
         let peer_manager = Arc::new(MockPeerManager::new());
@@ -198,7 +296,7 @@ mod bitcoind_tests {
     }
 
     #[tokio::test]
-    async fn test_handle_ldk_events() {
+    async fn test_11_handle_ldk_events() {
         let channel_manager = ChannelManager::new();
         let bitcoin_client = BitcoinClient::new();
         let keys_manager = KeysManager::new();
@@ -236,7 +334,7 @@ mod bitcoind_tests {
     }
 
     #[tokio::test]
-    async fn test_open_channel() {
+    async fn test_12_open_channel() {
         let channel_manager = ChannelManager::new();
         let peer_pubkey = pubkey_from_private_key(&[0x01; 32]);
         let channel_amt_sat = 1_000_000;
@@ -256,7 +354,7 @@ mod bitcoind_tests {
     }
 
     #[test]
-    fn test_outbound_payment() {
+    fn test_13_outbound_payment() {
         // Step 1: Setup empty storage
         let mut outbound_payments = OutboundPaymentInfoStorage {
             payments: HashMap::new(),
@@ -279,7 +377,7 @@ mod bitcoind_tests {
     }
 
     #[test]
-    fn test_send_payment() {
+    fn test_14_send_payment() {
         let channel_manager = ChannelManager::new();
         let mut outbound_payments = OutboundPaymentInfoStorage {
             payments: HashMap::new(),
@@ -301,7 +399,7 @@ mod bitcoind_tests {
     }
 
     #[test]
-    fn test_node_keys_manager() {
+    fn test_08_node_keys_manager() {
         let countersignatory_basepoint = pubkey_from_private_key(&[0x01; 32]);
         let seed = &[0x02; 32];
         let keys_manager = NodeKeysManager::new(*seed);
@@ -317,7 +415,7 @@ mod bitcoind_tests {
     }
 
     #[test]
-    fn test_simple_store() -> io::Result<()> {
+    fn test_09_simple_store() -> io::Result<()> {
         let mut temp_path = temp_dir();
         temp_path.push("simple_store_test");
         let store = ExerciseFileStore::new(temp_path);
