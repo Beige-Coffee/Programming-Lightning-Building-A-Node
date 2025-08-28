@@ -166,7 +166,7 @@ type ChainMonitor = chainmonitor::ChainMonitor<
 	>,
 >;
 
-type LdkOnChainWallet = OnChainWallet<
+pub(crate) type LdkOnChainWallet = OnChainWallet<
     Arc<BitcoindClient>,
     Arc<BitcoindClient>,
     Arc<FilesystemLogger>,
@@ -235,7 +235,7 @@ async fn handle_ldk_events(
 			// Construct the raw transaction with one output, that is paid the amount of the
 			// channel.
 			let mut outputs = vec![HashMap::with_capacity(1)];
-			outputs[0].insert(output_script, channel_value_satoshis as u64 / 100_000_000);
+			outputs[0].insert(output_script, channel_value_satoshis as u64);
 			
 			let final_tx: Transaction = on_chain_wallet.create_transaction(outputs);
 
@@ -1170,12 +1170,14 @@ async fn start_ldk() {
 	let cli_persister = Arc::clone(&persister);
 	let cli_logger = Arc::clone(&logger);
 	let cli_peer_manager = Arc::clone(&peer_manager);
+	let cli_on_chain_wallet = Arc::clone(&on_chain_wallet);
 	let cli_poll = tokio::task::spawn_blocking(move || {
 		cli::poll_for_user_input(
 			cli_peer_manager,
 			cli_channel_manager,
 			cli_chain_monitor,
 			keys_manager,
+			cli_on_chain_wallet,
 			network_graph,
 			inbound_payments,
 			outbound_payments,
