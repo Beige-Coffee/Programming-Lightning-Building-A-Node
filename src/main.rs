@@ -20,6 +20,7 @@ mod bdk_wallet;
 use crate::bitcoind_client::BitcoindClient;
 use crate::filesystem_store::FilesystemStore;
 use crate::logger::FilesystemLogger;
+use crate::bdk_wallet::OnChainWallet;
 use bitcoin::blockdata::transaction::Transaction;
 use bitcoin::consensus::encode;
 use bitcoin::io;
@@ -50,6 +51,7 @@ use lightning::util::persist::{
 	self, KVStore, MonitorUpdatingPersister, OUTPUT_SWEEPER_PERSISTENCE_KEY,
 	OUTPUT_SWEEPER_PERSISTENCE_PRIMARY_NAMESPACE, OUTPUT_SWEEPER_PERSISTENCE_SECONDARY_NAMESPACE,
 };
+use lightning::log_info;
 use lightning::util::ser::{Readable, ReadableArgs, Writeable, Writer};
 use lightning::util::sweep as ldk_sweep;
 use lightning::{chain, impl_writeable_tlv_based, impl_writeable_tlv_based_enum};
@@ -682,6 +684,32 @@ async fn start_ldk() {
 			.unwrap()
 	};
 
+
+	let on_chain_wallet = Arc::new(OnChainWallet::new(
+        bdk_wallet,
+        args.bitcoind_rpc_host.clone(),
+        args.bitcoind_rpc_port,
+        args.bitcoind_rpc_username.clone(),
+        on_chain_wallet_file_path.to_string(),
+        args.bitcoind_rpc_password.clone(),
+        fee_estimator.clone(),
+        broadcaster.clone(),
+        Arc::clone(&logger),
+    	));
+
+    // Start wallet sync in a background task
+    let wallet_sync = Arc::clone(&on_chain_wallet);
+    tokio::spawn(async move {
+        let mut interval = tokio::time::interval(Duration::from_secs(30)); // Sync every 30 seconds
+        loop {
+            interval.tick().await;
+            if let Err(e) = wallet_sync.sync_wallet() {
+                println!("Failed to sync wallet: {}", e);
+            } else {
+                println!("Wallet sync completed");
+            }
+        }
+    });
 
 	let cur = SystemTime::now().duration_since(SystemTime::UNIX_EPOCH).unwrap();
 	let keys_manager = Arc::new(KeysManager::new(&keys_seed, cur.as_secs(), cur.subsec_nanos()));
