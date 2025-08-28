@@ -1,0 +1,188 @@
+node-workshop v0.1.0 (/Users/austin/Documents/Documents/LDK/Programming-Lightning-Building-A-Node)
+├── base64 v0.13.1
+├── bdk_bitcoind_rpc v0.21.0
+│   ├── bdk_core v0.6.1
+│   │   └── bitcoin v0.32.7
+│   │       ├── base58ck v0.1.0
+│   │       │   ├── bitcoin-internals v0.3.0
+│   │       │   │   └── serde v1.0.152
+│   │       │   │       └── serde_derive v1.0.152 (proc-macro)
+│   │       │   │           ├── proc-macro2 v1.0.75
+│   │       │   │           │   └── unicode-ident v1.0.6
+│   │       │   │           ├── quote v1.0.35
+│   │       │   │           │   └── proc-macro2 v1.0.75 (*)
+│   │       │   │           └── syn v1.0.107
+│   │       │   │               ├── proc-macro2 v1.0.75 (*)
+│   │       │   │               ├── quote v1.0.35 (*)
+│   │       │   │               └── unicode-ident v1.0.6
+│   │       │   └── bitcoin_hashes v0.14.0
+│   │       │       ├── bitcoin-io v0.1.3
+│   │       │       ├── hex-conservative v0.2.1
+│   │       │       │   └── arrayvec v0.7.6
+│   │       │       └── serde v1.0.152 (*)
+│   │       ├── base64 v0.21.7
+│   │       ├── bech32 v0.11.0
+│   │       ├── bitcoin-internals v0.3.0 (*)
+│   │       ├── bitcoin-io v0.1.3
+│   │       ├── bitcoin-units v0.1.2
+│   │       │   ├── bitcoin-internals v0.3.0 (*)
+│   │       │   └── serde v1.0.152 (*)
+│   │       ├── bitcoin_hashes v0.14.0 (*)
+│   │       ├── hex-conservative v0.2.1 (*)
+│   │       ├── hex_lit v0.1.1
+│   │       ├── secp256k1 v0.29.1
+│   │       │   ├── bitcoin_hashes v0.14.0 (*)
+│   │       │   ├── rand v0.8.5
+│   │       │   │   ├── libc v0.2.175
+│   │       │   │   ├── rand_chacha v0.3.1
+│   │       │   │   │   ├── ppv-lite86 v0.2.21
+│   │       │   │   │   │   └── zerocopy v0.8.26
+│   │       │   │   │   └── rand_core v0.6.4
+│   │       │   │   │       └── getrandom v0.2.16
+│   │       │   │   │           ├── cfg-if v1.0.0
+│   │       │   │   │           └── libc v0.2.175
+│   │       │   │   └── rand_core v0.6.4 (*)
+│   │       │   ├── secp256k1-sys v0.10.1
+│   │       │   │   [build-dependencies]
+│   │       │   │   └── cc v1.0.78
+│   │       │   └── serde v1.0.152 (*)
+│   │       └── serde v1.0.152 (*)
+│   ├── bitcoin v0.32.7 (*)
+│   └── bitcoincore-rpc v0.19.0
+│       ├── bitcoincore-rpc-json v0.19.0
+│       │   ├── bitcoin v0.32.7 (*)
+│       │   ├── serde v1.0.152 (*)
+│       │   └── serde_json v1.0.91
+│       │       ├── itoa v1.0.5
+│       │       ├── ryu v1.0.12
+│       │       └── serde v1.0.152 (*)
+│       ├── jsonrpc v0.18.0
+│       │   ├── base64 v0.13.1
+│       │   ├── minreq v2.14.0
+│       │   │   ├── log v0.4.17
+│       │   │   │   └── cfg-if v1.0.0
+│       │   │   ├── serde v1.0.152 (*)
+│       │   │   └── serde_json v1.0.91 (*)
+│       │   ├── serde v1.0.152 (*)
+│       │   └── serde_json v1.0.91 (*)
+│       ├── log v0.4.17 (*)
+│       ├── serde v1.0.152 (*)
+│       └── serde_json v1.0.91 (*)
+├── bdk_chain v0.23.1
+│   ├── bdk_core v0.6.1 (*)
+│   └── bitcoin v0.32.7 (*)
+├── bdk_core v0.6.1 (*)
+├── bdk_wallet v1.2.0
+│   ├── bdk_chain v0.21.1
+│   │   ├── bdk_core v0.4.1
+│   │   │   ├── bitcoin v0.32.7 (*)
+│   │   │   └── serde v1.0.152 (*)
+│   │   ├── bitcoin v0.32.7 (*)
+│   │   ├── miniscript v12.3.5
+│   │   │   ├── bech32 v0.11.0
+│   │   │   ├── bitcoin v0.32.7 (*)
+│   │   │   └── serde v1.0.152 (*)
+│   │   ├── rusqlite v0.31.0
+│   │   │   ├── bitflags v2.9.3
+│   │   │   ├── fallible-iterator v0.3.0
+│   │   │   ├── fallible-streaming-iterator v0.1.9
+│   │   │   ├── hashlink v0.9.1
+│   │   │   │   └── hashbrown v0.14.5
+│   │   │   │       └── ahash v0.8.12
+│   │   │   │           ├── cfg-if v1.0.0
+│   │   │   │           ├── once_cell v1.21.3
+│   │   │   │           └── zerocopy v0.8.26
+│   │   │   │           [build-dependencies]
+│   │   │   │           └── version_check v0.9.5
+│   │   │   ├── libsqlite3-sys v0.28.0
+│   │   │   │   [build-dependencies]
+│   │   │   │   ├── cc v1.0.78
+│   │   │   │   ├── pkg-config v0.3.32
+│   │   │   │   └── vcpkg v0.2.15
+│   │   │   └── smallvec v1.15.1
+│   │   └── serde v1.0.152 (*)
+│   ├── bip39 v2.1.0
+│   │   ├── bitcoin_hashes v0.13.0
+│   │   │   ├── bitcoin-internals v0.2.0
+│   │   │   └── hex-conservative v0.1.2
+│   │   ├── serde v1.0.152 (*)
+│   │   └── unicode-normalization v0.1.22
+│   │       └── tinyvec v1.9.0
+│   │           └── tinyvec_macros v0.1.1
+│   ├── bitcoin v0.32.7 (*)
+│   ├── miniscript v12.3.5 (*)
+│   ├── rand_core v0.6.4 (*)
+│   ├── serde v1.0.152 (*)
+│   └── serde_json v1.0.91 (*)
+├── bech32 v0.8.1
+├── bitcoin v0.32.7 (*)
+├── bitcoin-bech32 v0.12.1
+│   └── bech32 v0.8.1
+├── chrono v0.4.23
+│   ├── iana-time-zone v0.1.53
+│   │   └── core-foundation-sys v0.8.3
+│   ├── num-integer v0.1.45
+│   │   └── num-traits v0.2.15
+│   │       [build-dependencies]
+│   │       └── autocfg v1.1.0
+│   │   [build-dependencies]
+│   │   └── autocfg v1.1.0
+│   └── num-traits v0.2.15 (*)
+├── ctrlc v3.4.7
+│   └── nix v0.30.1
+│       ├── bitflags v2.9.3
+│       ├── cfg-if v1.0.0
+│       └── libc v0.2.175
+│       [build-dependencies]
+│       └── cfg_aliases v0.2.1
+├── hex_lit v0.1.1
+├── libc v0.2.175
+├── lightning v0.0.125
+│   ├── bech32 v0.9.1
+│   ├── bitcoin v0.32.7 (*)
+│   ├── lightning-invoice v0.32.0
+│   │   ├── bech32 v0.9.1
+│   │   ├── bitcoin v0.32.7 (*)
+│   │   └── lightning-types v0.1.0
+│   │       ├── bech32 v0.9.1
+│   │       ├── bitcoin v0.32.7 (*)
+│   │       └── hex-conservative v0.2.1 (*)
+│   └── lightning-types v0.1.0 (*)
+├── lightning-background-processor v0.0.125
+│   ├── bitcoin v0.32.7 (*)
+│   ├── lightning v0.0.125 (*)
+│   └── lightning-rapid-gossip-sync v0.0.125
+│       ├── bitcoin v0.32.7 (*)
+│       └── lightning v0.0.125 (*)
+├── lightning-block-sync v0.0.125
+│   ├── bitcoin v0.32.7 (*)
+│   ├── chunked_transfer v1.4.1
+│   ├── lightning v0.0.125 (*)
+│   ├── serde_json v1.0.91 (*)
+│   └── tokio v1.35.1
+│       ├── bytes v1.3.0
+│       ├── libc v0.2.175
+│       ├── mio v0.8.10
+│       │   └── libc v0.2.175
+│       ├── num_cpus v1.15.0
+│       │   └── libc v0.2.175
+│       ├── pin-project-lite v0.2.13
+│       ├── socket2 v0.5.5
+│       │   └── libc v0.2.175
+│       └── tokio-macros v2.2.0 (proc-macro)
+│           ├── proc-macro2 v1.0.75 (*)
+│           ├── quote v1.0.35 (*)
+│           └── syn v2.0.47
+│               ├── proc-macro2 v1.0.75 (*)
+│               ├── quote v1.0.35 (*)
+│               └── unicode-ident v1.0.6
+├── lightning-invoice v0.32.0 (*)
+├── lightning-net-tokio v0.0.125
+│   ├── bitcoin v0.32.7 (*)
+│   ├── lightning v0.0.125 (*)
+│   └── tokio v1.35.1 (*)
+├── lightning-rapid-gossip-sync v0.0.125 (*)
+├── rand v0.4.6
+│   └── libc v0.2.175
+├── serde_json v1.0.91 (*)
+└── tokio v1.35.1 (*)

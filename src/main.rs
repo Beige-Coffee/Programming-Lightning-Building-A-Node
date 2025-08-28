@@ -15,10 +15,12 @@ mod commands;
 mod keys_manager;
 mod filesystem_store;
 mod logger;
+mod bdk_wallet;
 
 use crate::bitcoind_client::BitcoindClient;
 use crate::filesystem_store::FilesystemStore;
 use crate::logger::FilesystemLogger;
+use crate::bdk_wallet::OnChainWallet;
 use bitcoin::blockdata::transaction::Transaction;
 use bitcoin::consensus::encode;
 use bitcoin::io;
@@ -49,6 +51,8 @@ use lightning::util::persist::{
 	self, KVStore, MonitorUpdatingPersister, OUTPUT_SWEEPER_PERSISTENCE_KEY,
 	OUTPUT_SWEEPER_PERSISTENCE_PRIMARY_NAMESPACE, OUTPUT_SWEEPER_PERSISTENCE_SECONDARY_NAMESPACE,
 };
+use lightning::log_info;
+use lightning::chain::chaininterface::{BroadcasterInterface, ConfirmationTarget, FeeEstimator};
 use lightning::util::ser::{Readable, ReadableArgs, Writeable, Writer};
 use lightning::util::sweep as ldk_sweep;
 use lightning::{chain, impl_writeable_tlv_based, impl_writeable_tlv_based_enum};
@@ -71,6 +75,11 @@ use std::path::Path;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex, RwLock};
 use std::time::{Duration, SystemTime};
+use lightning::log_error;
+use ::bdk_wallet::template::Bip84;
+use ::bdk_wallet::KeychainKind;
+use ::bdk_wallet::Wallet as BdkWallet;
+use lightning::util::logger::Logger;
 
 #[derive(Copy, Clone)]
 pub(crate) enum HTLCStatus {
@@ -157,6 +166,12 @@ type ChainMonitor = chainmonitor::ChainMonitor<
 	>,
 >;
 
+pub(crate) type LdkOnChainWallet = OnChainWallet<
+    Arc<BitcoindClient>,
+    Arc<BitcoindClient>,
+    Arc<FilesystemLogger>,
+>;
+
 pub(crate) type GossipVerifier = lightning_block_sync::gossip::GossipVerifier<
 	lightning_block_sync::gossip::TokioSpawner,
 	Arc<lightning_block_sync::rpc::RpcClient>,
@@ -182,14 +197,14 @@ type OnionMessenger =
 
 pub(crate) type BumpTxEventHandler = BumpTransactionEventHandler<
 	Arc<BitcoindClient>,
-	Arc<Wallet<Arc<BitcoindClient>, Arc<FilesystemLogger>>>,
+	Arc<Wallet<Arc<LdkOnChainWallet>, Arc<FilesystemLogger>>>,
 	Arc<KeysManager>,
 	Arc<FilesystemLogger>,
 >;
 
 pub(crate) type OutputSweeper = ldk_sweep::OutputSweeper<
 	Arc<BitcoindClient>,
-	Arc<BitcoindClient>,
+	Arc<LdkOnChainWallet>,
 	Arc<BitcoindClient>,
 	Arc<dyn Filter + Send + Sync>,
 	Arc<FilesystemStore>,
@@ -203,6 +218,7 @@ struct OutputSweeperWrapper(Arc<OutputSweeper>);
 async fn handle_ldk_events(
 	channel_manager: Arc<ChannelManager>, bitcoind_client: &BitcoindClient,
 	network_graph: &NetworkGraph, keys_manager: &KeysManager,
+	on_chain_wallet: &LdkOnChainWallet,
 	bump_tx_event_handler: &BumpTxEventHandler, peer_manager: Arc<PeerManager>,
 	inbound_payments: Arc<Mutex<InboundPaymentInfoStorage>>,
 	outbound_payments: Arc<Mutex<OutboundPaymentInfoStorage>>, fs_store: Arc<FilesystemStore>,
@@ -218,30 +234,11 @@ async fn handle_ldk_events(
 		} => {
 			// Construct the raw transaction with one output, that is paid the amount of the
 			// channel.
-			let addr = WitnessProgram::from_scriptpubkey(
-				&output_script.as_bytes(),
-				match network {
-					Network::Bitcoin => bitcoin_bech32::constants::Network::Bitcoin,
-					Network::Regtest => bitcoin_bech32::constants::Network::Regtest,
-					Network::Signet => bitcoin_bech32::constants::Network::Signet,
-					Network::Testnet | _ => bitcoin_bech32::constants::Network::Testnet,
-				},
-			)
-			.expect("Lightning funding tx should always be to a SegWit output")
-			.to_address();
 			let mut outputs = vec![HashMap::with_capacity(1)];
-			outputs[0].insert(addr, channel_value_satoshis as f64 / 100_000_000.0);
-			let raw_tx = bitcoind_client.create_raw_transaction(outputs).await;
+			outputs[0].insert(output_script, channel_value_satoshis as u64);
+			
+			let final_tx: Transaction = on_chain_wallet.create_transaction(outputs);
 
-			// Have your wallet put the inputs into the transaction such that the output is
-			// satisfied.
-			let funded_tx = bitcoind_client.fund_raw_transaction(raw_tx).await;
-
-			// Sign the final funding transaction and give it to LDK, who will eventually broadcast it.
-			let signed_tx = bitcoind_client.sign_raw_transaction_with_wallet(funded_tx.hex).await;
-			assert_eq!(signed_tx.complete, true);
-			let final_tx: Transaction =
-				encode::deserialize(&hex_utils::to_vec(&signed_tx.hex).unwrap()).unwrap();
 			// Give the funding transaction back to LDK for opening the channel.
 			if channel_manager
 				.funding_transaction_generated(temporary_channel_id, counterparty_node_id, final_tx)
@@ -641,12 +638,74 @@ async fn start_ldk() {
 		}
 		key
 	};
+
+	// Initialize the on-chain wallet 
+	let xprv = bitcoin::bip32::Xpriv::new_master(args.network, &keys_seed).map_err(|e| {
+		log_error!(logger, "Failed to derive master secret: {}", e);
+	}).unwrap();
+
+	let descriptor = Bip84(xprv, KeychainKind::External);
+	let change_descriptor = Bip84(xprv, KeychainKind::Internal);
+	let on_chain_wallet_file_path = "on_chain_wallet.sqlite3";
+	let mut conn = ::bdk_wallet::rusqlite::Connection::open(on_chain_wallet_file_path).map_err(|e| {
+		log_error!(logger, "Failed to establish on-chain wallet database connection: {}", e);
+	}).unwrap();
+
+	let wallet_opt = BdkWallet::load()
+		.descriptor(KeychainKind::External, Some(descriptor.clone()))
+		.descriptor(KeychainKind::Internal, Some(change_descriptor.clone()))
+		.extract_keys()
+		.check_network(args.network)
+		.load_wallet(&mut conn)
+		.map_err(|e| {
+			log_error!(logger, "Failed to load BDK wallet: {:?}", e);
+		})
+		.unwrap();
+
+	let bdk_wallet = match wallet_opt {
+		Some(wallet) => wallet,
+		None => BdkWallet::create(descriptor, change_descriptor)
+			.network(args.network)
+			.create_wallet(&mut conn)
+			.map_err(|e| {
+				log_error!(logger, "Failed to set up wallet: {}", e);
+			})
+			.unwrap()
+	};
+
+
+	let on_chain_wallet = Arc::new(OnChainWallet::new(
+        bdk_wallet,
+        args.bitcoind_rpc_host.clone(),
+        args.bitcoind_rpc_port,
+        args.bitcoind_rpc_username.clone(),
+        on_chain_wallet_file_path.to_string(),
+        args.bitcoind_rpc_password.clone(),
+        fee_estimator.clone(),
+        broadcaster.clone(),
+        Arc::clone(&logger),
+    	));
+
+    // Start wallet sync in a background task
+    let wallet_sync = Arc::clone(&on_chain_wallet);
+    tokio::spawn(async move {
+        let mut interval = tokio::time::interval(Duration::from_secs(30)); // Sync every 30 seconds
+        loop {
+            interval.tick().await;
+            if let Err(e) = wallet_sync.sync_wallet() {
+                println!("Failed to sync wallet: {}", e);
+            } else {
+                println!("Wallet sync completed");
+            }
+        }
+    });
+
 	let cur = SystemTime::now().duration_since(SystemTime::UNIX_EPOCH).unwrap();
 	let keys_manager = Arc::new(KeysManager::new(&keys_seed, cur.as_secs(), cur.subsec_nanos()));
 
 	let bump_tx_event_handler = Arc::new(BumpTransactionEventHandler::new(
 		Arc::clone(&broadcaster),
-		Arc::new(Wallet::new(Arc::clone(&bitcoind_client), Arc::clone(&logger))),
+		Arc::new(Wallet::new(Arc::clone(&on_chain_wallet), Arc::clone(&logger))),
 		Arc::clone(&keys_manager),
 		Arc::clone(&logger),
 	));
@@ -771,7 +830,7 @@ async fn start_ldk() {
 				fee_estimator.clone(),
 				None,
 				keys_manager.clone(),
-				bitcoind_client.clone(),
+				on_chain_wallet.clone(),
 				fs_store.clone(),
 				logger.clone(),
 			);
@@ -783,7 +842,7 @@ async fn start_ldk() {
 				fee_estimator.clone(),
 				None,
 				keys_manager.clone(),
-				bitcoind_client.clone(),
+				on_chain_wallet.clone(),
 				fs_store.clone(),
 				logger.clone(),
 			);
@@ -965,6 +1024,7 @@ async fn start_ldk() {
 	let bitcoind_client_event_listener = Arc::clone(&bitcoind_client);
 	let network_graph_event_listener = Arc::clone(&network_graph);
 	let keys_manager_event_listener = Arc::clone(&keys_manager);
+	let on_chain_wallet_event_listener = Arc::clone(&on_chain_wallet);
 	let inbound_payments_event_listener = Arc::clone(&inbound_payments);
 	let outbound_payments_event_listener = Arc::clone(&outbound_payments);
 	let fs_store_event_listener = Arc::clone(&fs_store);
@@ -976,6 +1036,7 @@ async fn start_ldk() {
 		let bitcoind_client_event_listener = Arc::clone(&bitcoind_client_event_listener);
 		let network_graph_event_listener = Arc::clone(&network_graph_event_listener);
 		let keys_manager_event_listener = Arc::clone(&keys_manager_event_listener);
+		let on_chain_wallet_event_listener = Arc::clone(&on_chain_wallet_event_listener);
 		let bump_tx_event_handler = Arc::clone(&bump_tx_event_handler);
 		let inbound_payments_event_listener = Arc::clone(&inbound_payments_event_listener);
 		let outbound_payments_event_listener = Arc::clone(&outbound_payments_event_listener);
@@ -988,6 +1049,7 @@ async fn start_ldk() {
 				&bitcoind_client_event_listener,
 				&network_graph_event_listener,
 				&keys_manager_event_listener,
+				&on_chain_wallet_event_listener,
 				&bump_tx_event_handler,
 				peer_manager_event_listener,
 				inbound_payments_event_listener,
@@ -1108,12 +1170,14 @@ async fn start_ldk() {
 	let cli_persister = Arc::clone(&persister);
 	let cli_logger = Arc::clone(&logger);
 	let cli_peer_manager = Arc::clone(&peer_manager);
+	let cli_on_chain_wallet = Arc::clone(&on_chain_wallet);
 	let cli_poll = tokio::task::spawn_blocking(move || {
 		cli::poll_for_user_input(
 			cli_peer_manager,
 			cli_channel_manager,
 			cli_chain_monitor,
 			keys_manager,
+			cli_on_chain_wallet,
 			network_graph,
 			inbound_payments,
 			outbound_payments,

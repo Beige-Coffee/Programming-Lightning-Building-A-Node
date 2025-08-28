@@ -5,7 +5,7 @@ use crate::filesystem_store::FilesystemStore;
 use crate::logger::FilesystemLogger;
 use crate::{
 	ChainMonitor, ChannelManager, HTLCStatus, InboundPaymentInfoStorage, MillisatAmount,
-	NetworkGraph, OutboundPaymentInfoStorage, PaymentInfo, PeerManager,
+	NetworkGraph, OutboundPaymentInfoStorage, PaymentInfo, PeerManager, LdkOnChainWallet
 };
 use bitcoin::hashes::sha256::Hash as Sha256;
 use bitcoin::hashes::Hash;
@@ -50,6 +50,7 @@ pub(crate) struct LdkUserInfo {
 pub(crate) fn poll_for_user_input(
 	peer_manager: Arc<PeerManager>, channel_manager: Arc<ChannelManager>,
 	chain_monitor: Arc<ChainMonitor>, keys_manager: Arc<KeysManager>,
+	on_chain_wallet: Arc<LdkOnChainWallet>,
 	network_graph: Arc<NetworkGraph>, inbound_payments: Arc<Mutex<InboundPaymentInfoStorage>>,
 	outbound_payments: Arc<Mutex<OutboundPaymentInfoStorage>>, ldk_data_dir: String,
 	network: Network, logger: Arc<FilesystemLogger>, fs_store: Arc<FilesystemStore>,
@@ -139,6 +140,14 @@ pub(crate) fn poll_for_user_input(
 							peer_pubkey_and_ip_addr,
 						);
 					}
+				},
+				"getaddress" => {
+					let address = on_chain_wallet.get_address();
+					println!("On Chain Wallet Address: {:?}", address);
+				},
+				"getbalance" => {
+					let balance = on_chain_wallet.get_balance();
+					println!("Wallet balance before syncing: {}", balance.total());
 				},
 				"sendpayment" => {
 					let invoice_str = words.next();
@@ -515,6 +524,9 @@ fn help() {
 	println!("\n  Invoices:");
 	println!("      getinvoice <amt_msats> <expiry_secs>");
 	println!("      getoffer [<amt_msats>]");
+	println!("\n  On Chain:");
+	println!("      getaddress");
+	println!("      getbalance");
 	println!("\n  Other:");
 	println!("      signmessage <message>");
 	println!("      nodeinfo");

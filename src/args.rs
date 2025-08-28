@@ -13,12 +13,14 @@ pub(crate) fn parse_startup_args() -> Result<LdkUserInfo, ()> {
 		let bitcoind_rpc_username = "polaruser".to_string();
 		let bitcoind_rpc_password = "polarpass".to_string();
 
-		let bitcoind_rpc_host = "d7e344c7716e.ngrok.app".to_string();
-		let bitcoind_rpc_port = 80;
+		//let bitcoind_rpc_host = "24a8612668f3.ngrok.app".to_string();
+		//let bitcoind_rpc_port = 80;
+		let bitcoind_rpc_host = "127.0.0.1".to_string();
+		let bitcoind_rpc_port = 18443;
 
 		let ldk_storage_dir_path = "./".to_string();
 
-		let ldk_peer_listening_port = 9735;
+		let ldk_peer_listening_port = 9733;
 
 		let network = Network::Regtest;
 
@@ -26,7 +28,7 @@ pub(crate) fn parse_startup_args() -> Result<LdkUserInfo, ()> {
 		let mut ldk_announced_node_name = [0u8; 32];
 		ldk_announced_node_name[..alias.as_bytes().len()].copy_from_slice(alias.as_bytes());
 
-		let ldk_announced_listen_addr = vec![SocketAddress::from_str("0.0.0.0:9735").unwrap()];
+		let ldk_announced_listen_addr = vec![SocketAddress::from_str("0.0.0.0:9733").unwrap()];
 
 		return Ok(LdkUserInfo {
 			bitcoind_rpc_username,
