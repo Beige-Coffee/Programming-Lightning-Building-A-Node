@@ -15,10 +15,9 @@ lightning-net-tokio = { version = "0.0.125" }
 lightning-background-processor = { version = "0.0.125", features = [ "futures" ] }
 lightning-rapid-gossip-sync = { version = "0.0.125" }
 bdk_wallet = { version = "2.1.0", features = ["std", "keys-bip39", "rusqlite"]}
-bdk_bitcoind_rpc = { version = "0.21.0" }
+bdk_esplora = { version = "0.22.1", features = ["blocking"] }
 bdk_chain = { version = "0.23.1", default-features = false, features = ["std"] }
 bdk_core = { version = "0.6.1" }
-bitcoincore-rpc = { version = "0.19.0"}
 
 base64 = "0.13.0"
 bitcoin = "0.32"

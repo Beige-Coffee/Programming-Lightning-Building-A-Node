@@ -1,8 +1,6 @@
 //use bdk_wallet::Wallet as BdkWallet;
-use bdk_bitcoind_rpc::{
-	Emitter, MempoolEvent,
-};
-use bitcoincore_rpc::{Auth, Client, RpcApi};
+use bdk_esplora::esplora_client::{Builder, BlockingClient};
+use bdk_esplora::{esplora_client, EsploraExt};
 use bdk_chain::ChainPosition::{Confirmed, Unconfirmed};
 use bdk_wallet::rusqlite::Connection;
 use bdk_wallet::PersistedWallet as BdkWallet;
@@ -10,6 +8,7 @@ use bdk_wallet::{
 	bitcoin::{Block, Network},
 	KeychainKind, SignOptions, Wallet,
 };
+use std::{collections::BTreeSet, io::Write};
 use bdk_wallet::{AddressInfo, Balance};
 use bitcoin::address::Address;
 use bitcoin::blockdata::constants::WITNESS_SCALE_FACTOR;
@@ -35,12 +34,8 @@ use std::{
 	time::Instant,
 };
 
-#[derive(Debug)]
-enum Emission {
-	SigTerm,
-	Block(bdk_bitcoind_rpc::BlockEvent<Block>),
-	Mempool(MempoolEvent),
-}
+const STOP_GAP: usize = 5;
+const PARALLEL_REQUESTS: usize = 5;
 
 
 pub(crate) struct OnChainWallet<B: Deref, E: Deref, L: Deref>
@@ -51,7 +46,7 @@ where
 {
 	// A BDK on-chain wallet.
 	inner: Mutex<BdkWallet<Connection>>,
-	rpc_client: Arc<Client>,
+	client: Arc<BlockingClient>,
 	path_to_db: String,
 	broadcaster: B,
 	fee_estimator: E,
@@ -70,99 +65,33 @@ where
 	) -> Self {
 		let inner = Mutex::new(wallet);
 
-        let rpc_url = "http://lightning.ngrok.app:80".to_string();
-        //let rpc_url = "127.0.0.1:18443".to_string();
+        let esplora_url = "https://ee5c65241ab6.ngrok.app".to_string();
 
-        let auth = Auth::UserPass("polaruser".to_string(), "polarpass".to_string());
+        let client = Arc::new(esplora_client::Builder::new(&esplora_url).build_blocking());
 
-        let rpc_client = Arc::new(
-            Client::new(&rpc_url, auth).expect("Failed to create Bitcoin Core RPC client: check URL and credentials"),
-        );
-        /*/
-        println!(
-            "rpc_url {:?}",
-            rpc_url
-        );
-
-        println!(
-            "rpc_user {:?} rpc_password {:?}",
-            rpc_user,
-            rpc_password
-        );
-
-		let auth = Auth::UserPass(rpc_user, rpc_password);
-
-		let rpc_client = Arc::new(
-			Client::new(&rpc_url, auth).expect("Failed to create Bitcoin Core RPC client"),
-		);
-        */
-
-        println!(
-            "Connected to Bitcoin Core RPC at {:?}",
-            rpc_client.get_blockchain_info().unwrap()
-        );
-
-		Self { inner, rpc_client, path_to_db, broadcaster, fee_estimator, logger }
+		Self { inner, client, path_to_db, broadcaster, fee_estimator, logger }
 	}
 
 	pub fn sync_wallet(&self) -> anyhow::Result<(), Box<dyn std::error::Error>> {
 		let mut wallet = self.inner.lock().unwrap();
-		let start_load_wallet = Instant::now();
-		let mut db = Connection::open(self.path_to_db.clone())?;
+        let mut db = Connection::open(self.path_to_db.clone()).unwrap();
 
-		let wallet_tip = wallet.latest_checkpoint();
-
-		let (sender, receiver) = sync_channel::<Emission>(21);
-
-		let signal_sender = sender.clone();
-		let _ = ctrlc::set_handler(move || {
-			signal_sender.send(Emission::SigTerm).expect("failed to send sigterm")
-		});
-
-		let rpc_client = Arc::clone(&self.rpc_client);
-		let wallet_tip_clone = wallet_tip.clone();
-
-		let mut emitter = Emitter::new(
-			rpc_client,
-			wallet_tip_clone,
-			0,
-			wallet.transactions().filter(|tx| tx.chain_position.is_unconfirmed()),
-		);
-
-		// Move the Arc into the thread, not borrow it
-		spawn(move || -> Result<(), anyhow::Error> {
-			while let Some(emission) = emitter.next_block()? {
-				sender.send(Emission::Block(emission))?;
-			}
-			sender.send(Emission::Mempool(emitter.mempool()?))?;
-			Ok(())
-		});
-
-		let mut blocks_received = 0_usize;
-		for emission in receiver {
-			match emission {
-				Emission::SigTerm => {
-					break;
-				},
-				Emission::Block(block_emission) => {
-					blocks_received += 1;
-					let height = block_emission.block_height();
-					let hash = block_emission.block_hash();
-					let connected_to = block_emission.connected_to();
-					let start_apply_block = Instant::now();
-					wallet.apply_block_connected_to(&block_emission.block, height, connected_to)?;
-					wallet.persist(&mut db)?;
-					let elapsed = start_apply_block.elapsed().as_secs_f32();
-				},
-				Emission::Mempool(event) => {
-					let start_apply_mempool = Instant::now();
-					wallet.apply_evicted_txs(event.evicted);
-					wallet.apply_unconfirmed_txs(event.update);
-					wallet.persist(&mut db)?;
-					break;
-				},
-			}
-		}
+        let mut printed = 0;
+        let sync_request = wallet
+            .start_sync_with_revealed_spks()
+            .inspect(move |_, sync_progress| {
+                let progress_percent =
+                    (100 * sync_progress.consumed()) as f32 / sync_progress.total() as f32;
+                let progress_percent = progress_percent.round() as u32;
+                if progress_percent % 5 == 0 && progress_percent > printed {
+                    std::io::stdout().flush().expect("must flush");
+                    printed = progress_percent;
+                }
+            });
+        let sync_update = self.client.sync(sync_request, PARALLEL_REQUESTS)?;
+    
+        wallet.apply_update(sync_update)?;
+        wallet.persist(&mut db)?;
 
 		Ok(())
 	}
