@@ -1,8 +1,8 @@
 //use bdk_wallet::Wallet as BdkWallet;
 use bdk_bitcoind_rpc::{
-	bitcoincore_rpc::{Auth, Client, RpcApi},
 	Emitter, MempoolEvent,
 };
+use bitcoincore_rpc::{Auth, Client, RpcApi};
 use bdk_chain::ChainPosition::{Confirmed, Unconfirmed};
 use bdk_wallet::rusqlite::Connection;
 use bdk_wallet::PersistedWallet as BdkWallet;
@@ -70,12 +70,37 @@ where
 	) -> Self {
 		let inner = Mutex::new(wallet);
 
-		let rpc_url = format!("http://{}:{}", host, port);
+        let rpc_url = "http://lightning.ngrok.app:80".to_string();
+        //let rpc_url = "127.0.0.1:18443".to_string();
+
+        let auth = Auth::UserPass("polaruser".to_string(), "polarpass".to_string());
+
+        let rpc_client = Arc::new(
+            Client::new(&rpc_url, auth).expect("Failed to create Bitcoin Core RPC client: check URL and credentials"),
+        );
+        /*/
+        println!(
+            "rpc_url {:?}",
+            rpc_url
+        );
+
+        println!(
+            "rpc_user {:?} rpc_password {:?}",
+            rpc_user,
+            rpc_password
+        );
+
 		let auth = Auth::UserPass(rpc_user, rpc_password);
 
 		let rpc_client = Arc::new(
 			Client::new(&rpc_url, auth).expect("Failed to create Bitcoin Core RPC client"),
 		);
+        */
+
+        println!(
+            "Connected to Bitcoin Core RPC at {:?}",
+            rpc_client.get_blockchain_info().unwrap()
+        );
 
 		Self { inner, rpc_client, path_to_db, broadcaster, fee_estimator, logger }
 	}
@@ -184,7 +209,7 @@ where
 	}
 
 	pub fn get_balance(&self) -> Balance {
-		let mut locked_wallet = self.inner.lock().unwrap();
+		let locked_wallet = self.inner.lock().unwrap();
 
 		let balance = locked_wallet.balance();
 
@@ -245,7 +270,7 @@ where
 	}
 
 	fn sign_psbt(&self, tx: Psbt) -> Result<Transaction, ()> {
-		let mut wallet = self.inner.lock().unwrap();
+		let wallet = self.inner.lock().unwrap();
 
 		let sign_options = SignOptions { trust_witness_utxo: true, ..Default::default() };
 

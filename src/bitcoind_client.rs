@@ -1,4 +1,4 @@
-#![allow(dead_code, unused_imports, unused_variables,unused_mut, unused_must_use, unexpected_cfgs, mismatched_lifetime_syntaxes)]
+#![allow(dead_code, unused_imports, unused_variables,unused_mut, unused_must_use, unexpected_cfgs, elided_named_lifetimes)]
 use crate::convert::{
 	BlockchainInfo, FeeResponse, FundedTx, ListUnspentResponse, MempoolMinFeeResponse, NewAddress,
 	RawTx, SignedTx, MempoolInfo
@@ -69,6 +69,21 @@ impl BitcoindClient {
 				eprintln!("Failed to create RpcClient: {:?}", e);
 				std::io::Error::new(std::io::ErrorKind::Other, format!("RpcClient creation failed: {:?}", e))
 		})?;
+
+		let dummy = bitcoind_rpc_client
+			.call_method::<BlockchainInfo>("getblockchaininfo", &vec![])
+			.await
+			.map_err(|_| {
+				std::io::Error::new(std::io::ErrorKind::PermissionDenied,
+				"Failed to make initial call to bitcoind - please check your RPC user/password and access settings")
+			})?;
+
+		println!(
+				"Blockchain info: {:?}",
+				dummy,
+		);
+
+
 		
 		let mut fees: HashMap<ConfirmationTarget, AtomicU32> = HashMap::new();
 

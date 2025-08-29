@@ -722,6 +722,7 @@ dependencies = [
  "bech32 0.8.1",
  "bitcoin",
  "bitcoin-bech32",
+ "bitcoincore-rpc",
  "chrono",
  "ctrlc",
  "hex_lit",
