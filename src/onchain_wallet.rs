@@ -63,35 +63,65 @@ where
 		wallet: BdkWallet<Connection>, host: String, port: u16, rpc_user: String,
 		path_to_db: String, rpc_password: String, fee_estimator: E, broadcaster: B, logger: L,
 	) -> Self {
+		
 		let inner = Mutex::new(wallet);
 
-        let esplora_url = "https://ee5c65241ab6.ngrok.app".to_string();
+		let esplora_url = "https://ee5c65241ab6.ngrok.app".to_string();
 
-        let client = Arc::new(esplora_client::Builder::new(&esplora_url).build_blocking());
+		let client = Arc::new(esplora_client::Builder::new(&esplora_url).build_blocking());
 
-		Self { inner, client, path_to_db, broadcaster, fee_estimator, logger }
+		let this = Self { inner, client, path_to_db, broadcaster, fee_estimator, logger };
+
+		this.full_scan();
+
+		this
+	}
+
+	pub fn full_scan(&self) -> anyhow::Result<(), Box<dyn std::error::Error>> {
+		let mut wallet = self.inner.lock().unwrap(); 
+		let mut db = Connection::open(self.path_to_db.clone()).unwrap();
+		
+		let request = wallet.start_full_scan().inspect({
+			let mut stdout = std::io::stdout();
+			let mut once = BTreeSet::<KeychainKind>::new();
+			move |keychain, spk_i, _| {
+					if once.insert(keychain) {
+							//print!("\nScanning keychain [{keychain:?}] ");
+					}
+					if spk_i % 5 == 0 {
+							//print!(" {spk_i:<3}");
+					}
+					stdout.flush().expect("must flush")
+			}
+		});
+
+		let update = self.client.full_scan(request, STOP_GAP, PARALLEL_REQUESTS)?;
+		wallet.apply_update(update)?;
+		wallet.persist(&mut db)?;
+		Ok(())
+		
 	}
 
 	pub fn sync_wallet(&self) -> anyhow::Result<(), Box<dyn std::error::Error>> {
 		let mut wallet = self.inner.lock().unwrap();
-        let mut db = Connection::open(self.path_to_db.clone()).unwrap();
+		let mut db = Connection::open(self.path_to_db.clone()).unwrap();
 
-        let mut printed = 0;
-        let sync_request = wallet
-            .start_sync_with_revealed_spks()
-            .inspect(move |_, sync_progress| {
-                let progress_percent =
-                    (100 * sync_progress.consumed()) as f32 / sync_progress.total() as f32;
-                let progress_percent = progress_percent.round() as u32;
-                if progress_percent % 5 == 0 && progress_percent > printed {
-                    std::io::stdout().flush().expect("must flush");
-                    printed = progress_percent;
-                }
-            });
-        let sync_update = self.client.sync(sync_request, PARALLEL_REQUESTS)?;
-    
-        wallet.apply_update(sync_update)?;
-        wallet.persist(&mut db)?;
+		let mut printed = 0;
+		let sync_request = wallet
+				.start_sync_with_revealed_spks()
+				.inspect(move |_, sync_progress| {
+						let progress_percent =
+								(100 * sync_progress.consumed()) as f32 / sync_progress.total() as f32;
+						let progress_percent = progress_percent.round() as u32;
+						if progress_percent % 5 == 0 && progress_percent > printed {
+								std::io::stdout().flush().expect("must flush");
+								printed = progress_percent;
+						}
+				});
+		let sync_update = self.client.sync(sync_request, PARALLEL_REQUESTS)?;
+
+		wallet.apply_update(sync_update)?;
+		wallet.persist(&mut db)?;
 
 		Ok(())
 	}

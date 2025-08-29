@@ -2,25 +2,28 @@
 mod args;
 pub mod bitcoind_client;
 mod cli;
+mod commands;
 mod convert;
 mod disk;
-mod hex_utils;
-mod sweep;
-mod tests;
-mod networking;
 mod events;
+mod filesystem_store;
+mod hex_utils;
 mod internal;
 mod intro;
-mod commands;
 mod keys_manager;
-mod filesystem_store;
 mod logger;
-mod bdk_wallet;
+mod networking;
+mod onchain_wallet;
+mod sweep;
+mod tests;
 
 use crate::bitcoind_client::BitcoindClient;
 use crate::filesystem_store::FilesystemStore;
 use crate::logger::FilesystemLogger;
-use crate::bdk_wallet::OnChainWallet;
+use crate::onchain_wallet::OnChainWallet;
+use ::bdk_wallet::template::Bip84;
+use ::bdk_wallet::KeychainKind;
+use ::bdk_wallet::Wallet as BdkWallet;
 use bitcoin::blockdata::transaction::Transaction;
 use bitcoin::consensus::encode;
 use bitcoin::io;
@@ -28,6 +31,7 @@ use bitcoin::network::Network;
 use bitcoin::BlockHash;
 use bitcoin_bech32::WitnessProgram;
 use disk::{INBOUND_PAYMENTS_FNAME, OUTBOUND_PAYMENTS_FNAME};
+use lightning::chain::chaininterface::{BroadcasterInterface, ConfirmationTarget, FeeEstimator};
 use lightning::chain::{chainmonitor, ChannelMonitorUpdateStatus};
 use lightning::chain::{BestBlock, Filter, Watch};
 use lightning::events::bump_transaction::{BumpTransactionEventHandler, Wallet};
@@ -36,10 +40,11 @@ use lightning::ln::channelmanager::{self, RecentPaymentDetails};
 use lightning::ln::channelmanager::{
 	ChainParameters, ChannelManagerReadArgs, PaymentId, SimpleArcChannelManager,
 };
-use lightning_block_sync::BlockSource;
 use lightning::ln::msgs::DecodeError;
 use lightning::ln::peer_handler::{IgnoringMessageHandler, MessageHandler, SimpleArcPeerManager};
 use lightning::ln::types::ChannelId;
+use lightning::log_error;
+use lightning::log_info;
 use lightning::onion_message::messenger::{DefaultMessageRouter, SimpleArcOnionMessenger};
 use lightning::routing::gossip;
 use lightning::routing::gossip::{NodeId, P2PGossipSync};
@@ -48,18 +53,18 @@ use lightning::routing::scoring::ProbabilisticScoringFeeParameters;
 use lightning::sign::{EntropySource, InMemorySigner, KeysManager};
 use lightning::types::payment::{PaymentHash, PaymentPreimage, PaymentSecret};
 use lightning::util::config::UserConfig;
+use lightning::util::logger::Logger;
 use lightning::util::persist::{
 	self, KVStore, MonitorUpdatingPersister, OUTPUT_SWEEPER_PERSISTENCE_KEY,
 	OUTPUT_SWEEPER_PERSISTENCE_PRIMARY_NAMESPACE, OUTPUT_SWEEPER_PERSISTENCE_SECONDARY_NAMESPACE,
 };
-use lightning::log_info;
-use lightning::chain::chaininterface::{BroadcasterInterface, ConfirmationTarget, FeeEstimator};
 use lightning::util::ser::{Readable, ReadableArgs, Writeable, Writer};
 use lightning::util::sweep as ldk_sweep;
 use lightning::{chain, impl_writeable_tlv_based, impl_writeable_tlv_based_enum};
 use lightning_background_processor::{process_events_async, GossipSync};
 use lightning_block_sync::init;
 use lightning_block_sync::poll;
+use lightning_block_sync::BlockSource;
 use lightning_block_sync::SpvClient;
 use lightning_block_sync::UnboundedCache;
 use lightning_net_tokio::SocketDescriptor;
@@ -76,11 +81,6 @@ use std::path::Path;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex, RwLock};
 use std::time::{Duration, SystemTime};
-use lightning::log_error;
-use ::bdk_wallet::template::Bip84;
-use ::bdk_wallet::KeychainKind;
-use ::bdk_wallet::Wallet as BdkWallet;
-use lightning::util::logger::Logger;
 
 #[derive(Copy, Clone)]
 pub(crate) enum HTLCStatus {
@@ -167,11 +167,8 @@ type ChainMonitor = chainmonitor::ChainMonitor<
 	>,
 >;
 
-pub(crate) type LdkOnChainWallet = OnChainWallet<
-    Arc<BitcoindClient>,
-    Arc<BitcoindClient>,
-    Arc<FilesystemLogger>,
->;
+pub(crate) type LdkOnChainWallet =
+	OnChainWallet<Arc<BitcoindClient>, Arc<BitcoindClient>, Arc<FilesystemLogger>>;
 
 pub(crate) type GossipVerifier = lightning_block_sync::gossip::GossipVerifier<
 	lightning_block_sync::gossip::TokioSpawner,
@@ -218,8 +215,7 @@ struct OutputSweeperWrapper(Arc<OutputSweeper>);
 
 async fn handle_ldk_events(
 	channel_manager: Arc<ChannelManager>, bitcoind_client: &BitcoindClient,
-	network_graph: &NetworkGraph, keys_manager: &KeysManager,
-	on_chain_wallet: &LdkOnChainWallet,
+	network_graph: &NetworkGraph, keys_manager: &KeysManager, on_chain_wallet: &LdkOnChainWallet,
 	bump_tx_event_handler: &BumpTxEventHandler, peer_manager: Arc<PeerManager>,
 	inbound_payments: Arc<Mutex<InboundPaymentInfoStorage>>,
 	outbound_payments: Arc<Mutex<OutboundPaymentInfoStorage>>, fs_store: Arc<FilesystemStore>,
@@ -239,8 +235,9 @@ async fn handle_ldk_events(
 			outputs[0].insert(output_script, channel_value_satoshis as u64);
 
 			let confirmation_target = ConfirmationTarget::AnchorChannelFee;
-			
-			let final_tx: Transaction = on_chain_wallet.create_transaction(outputs, confirmation_target);
+
+			let final_tx: Transaction =
+				on_chain_wallet.create_transaction(outputs, confirmation_target);
 
 			// Give the funding transaction back to LDK for opening the channel.
 			if channel_manager
@@ -587,7 +584,6 @@ async fn start_ldk() {
 			return;
 		},
 	};
-	
 
 	// Check that the bitcoind we've connected to is running the network we expect
 	let bitcoind_chain = bitcoind_client.get_blockchain_info().await.chain;
@@ -644,18 +640,22 @@ async fn start_ldk() {
 		key
 	};
 
-	// Initialize the on-chain wallet 
-	let xprv = bitcoin::bip32::Xpriv::new_master(args.network, &keys_seed).map_err(|e| {
-		log_error!(logger, "Failed to derive master secret: {}", e);
-	}).unwrap();
+	// Initialize the on-chain wallet
+	let xprv = bitcoin::bip32::Xpriv::new_master(args.network, &keys_seed)
+		.map_err(|e| {
+			log_error!(logger, "Failed to derive master secret: {}", e);
+		})
+		.unwrap();
 
 	let descriptor = Bip84(xprv, KeychainKind::External);
 	let change_descriptor = Bip84(xprv, KeychainKind::Internal);
-	let on_chain_wallet_file_path = "on_chain_wallet.sqlite3";
+	let on_chain_wallet_file_path = ".ldk/on_chain_wallet.sqlite3";
 	//let on_chain_wallet_file_path = "./test_dir/test_wallet.sqlite3";
-	let mut conn = ::bdk_wallet::rusqlite::Connection::open(on_chain_wallet_file_path).map_err(|e| {
-		log_error!(logger, "Failed to establish on-chain wallet database connection: {}", e);
-	}).unwrap();
+	let mut conn = ::bdk_wallet::rusqlite::Connection::open(on_chain_wallet_file_path)
+		.map_err(|e| {
+			log_error!(logger, "Failed to establish on-chain wallet database connection: {}", e);
+		})
+		.unwrap();
 
 	let wallet_opt = BdkWallet::load()
 		.descriptor(KeychainKind::External, Some(descriptor.clone()))
@@ -676,33 +676,32 @@ async fn start_ldk() {
 			.map_err(|e| {
 				log_error!(logger, "Failed to set up wallet: {}", e);
 			})
-			.unwrap()
+			.unwrap(),
 	};
 
-
 	let on_chain_wallet = Arc::new(OnChainWallet::new(
-        bdk_wallet,
-        args.bitcoind_rpc_host.clone(),
-        args.bitcoind_rpc_port,
-        args.bitcoind_rpc_username.clone(),
-        on_chain_wallet_file_path.to_string(),
-        args.bitcoind_rpc_password.clone(),
-        fee_estimator.clone(),
-        broadcaster.clone(),
-        Arc::clone(&logger),
-    	));
+		bdk_wallet,
+		args.bitcoind_rpc_host.clone(),
+		args.bitcoind_rpc_port,
+		args.bitcoind_rpc_username.clone(),
+		on_chain_wallet_file_path.to_string(),
+		args.bitcoind_rpc_password.clone(),
+		fee_estimator.clone(),
+		broadcaster.clone(),
+		Arc::clone(&logger),
+	));
 
-    // Start wallet sync in a background task
-    let wallet_sync = Arc::clone(&on_chain_wallet);
-    tokio::spawn(async move {
-        let mut interval = tokio::time::interval(Duration::from_secs(30)); // Sync every 30 seconds
-        loop {
-            interval.tick().await;
-            if let Err(e) = wallet_sync.sync_wallet() {
-                println!("Failed to sync wallet: {}", e);
-            }
-        }
-    });
+	// Start wallet sync in a background task
+	let wallet_sync = Arc::clone(&on_chain_wallet);
+	tokio::spawn(async move {
+		let mut interval = tokio::time::interval(Duration::from_secs(30)); // Sync every 30 seconds
+		loop {
+			interval.tick().await;
+			if let Err(e) = wallet_sync.sync_wallet() {
+				println!("Failed to sync wallet: {}", e);
+			}
+		}
+	});
 
 	let cur = SystemTime::now().duration_since(SystemTime::UNIX_EPOCH).unwrap();
 	let keys_manager = Arc::new(KeysManager::new(&keys_seed, cur.as_secs(), cur.subsec_nanos()));
@@ -739,22 +738,19 @@ async fn start_ldk() {
 		Arc::clone(&persister),
 	));
 
-
 	// Step 7: Read ChannelMonitor state from disk
 	let mut channelmonitors = persister.read_all_channel_monitors_with_updates().unwrap();
 	// If you are using the `FilesystemStore` as a `Persist` directly, use
 	// `lightning::util::persist::read_channel_monitors` like this:
 	//read_channel_monitors(Arc::clone(&persister), Arc::clone(&keys_manager), Arc::clone(&keys_manager)).unwrap();
 	let (best_block_hash, best_block_height) = bitcoind_client.get_best_block().await.unwrap();
-	println!("🏗️  Best block: height={:?}, hash={:?}", 
-		best_block_hash, 
-		best_block_height);
-	
+	println!("🏗️  Best block: height={:?}, hash={:?}", best_block_hash, best_block_height);
+
 	// Step 8: Poll for the best chain tip, which may be used by the channel manager & spv client
 	let polled_chain_tip = init::validate_best_block_header(bitcoind_client.as_ref())
 		.await
 		.expect("Failed to fetch best block header and best block");
-	
+
 	// Step 9: Initialize routing ProbabilisticScorer
 	let network_graph_path = format!("{}/network_graph", ldk_data_dir.clone());
 	let network_graph =
@@ -959,7 +955,7 @@ async fn start_ldk() {
 	let listening_port = args.ldk_peer_listening_port;
 	let stop_listen_connect = Arc::new(AtomicBool::new(false));
 	let stop_listen = Arc::clone(&stop_listen_connect);
-	
+
 	tokio::spawn(async move {
 		let listener = tokio::net::TcpListener::bind(format!("[::]:{}", listening_port))
 			.await
