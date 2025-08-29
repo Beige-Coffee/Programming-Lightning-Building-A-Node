@@ -587,9 +587,6 @@ async fn start_ldk() {
 			return;
 		},
 	};
-
-	println!("Init Bitcoind");
-
 	
 
 	// Check that the bitcoind we've connected to is running the network we expect
@@ -707,8 +704,6 @@ async fn start_ldk() {
         }
     });
 
-	println!("Init Wallet");
-
 	let cur = SystemTime::now().duration_since(SystemTime::UNIX_EPOCH).unwrap();
 	let keys_manager = Arc::new(KeysManager::new(&keys_seed, cur.as_secs(), cur.subsec_nanos()));
 
@@ -731,7 +726,6 @@ async fn start_ldk() {
 		Arc::clone(&bitcoind_client),
 	));
 
-	println!("Get to step 6");
 	// Alternatively, you can use the `FilesystemStore` as a `Persist` directly, at the cost of
 	// larger `ChannelMonitor` update writes (but no deletion or cleanup):
 	//let persister = Arc::clone(&fs_store);
@@ -745,7 +739,6 @@ async fn start_ldk() {
 		Arc::clone(&persister),
 	));
 
-	println!("Get to step 7");
 
 	// Step 7: Read ChannelMonitor state from disk
 	let mut channelmonitors = persister.read_all_channel_monitors_with_updates().unwrap();
@@ -757,13 +750,11 @@ async fn start_ldk() {
 		best_block_hash, 
 		best_block_height);
 	
-	println!("Get to step 8");
 	// Step 8: Poll for the best chain tip, which may be used by the channel manager & spv client
 	let polled_chain_tip = init::validate_best_block_header(bitcoind_client.as_ref())
 		.await
 		.expect("Failed to fetch best block header and best block");
 	
-	println!("Get to step 9");
 	// Step 9: Initialize routing ProbabilisticScorer
 	let network_graph_path = format!("{}/network_graph", ldk_data_dir.clone());
 	let network_graph =
@@ -775,7 +766,6 @@ async fn start_ldk() {
 		Arc::clone(&network_graph),
 		Arc::clone(&logger),
 	)));
-	println!("Get to step 10");
 
 	// Step 10: Create Router
 	let scoring_fee_params = ProbabilisticScoringFeeParameters::default();
