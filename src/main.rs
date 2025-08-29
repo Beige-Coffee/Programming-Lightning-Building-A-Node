@@ -36,6 +36,7 @@ use lightning::ln::channelmanager::{self, RecentPaymentDetails};
 use lightning::ln::channelmanager::{
 	ChainParameters, ChannelManagerReadArgs, PaymentId, SimpleArcChannelManager,
 };
+use lightning_block_sync::BlockSource;
 use lightning::ln::msgs::DecodeError;
 use lightning::ln::peer_handler::{IgnoringMessageHandler, MessageHandler, SimpleArcPeerManager};
 use lightning::ln::types::ChannelId;
@@ -586,7 +587,6 @@ async fn start_ldk() {
 			return;
 		},
 	};
-
 	
 
 	// Check that the bitcoind we've connected to is running the network we expect
@@ -725,6 +725,7 @@ async fn start_ldk() {
 		Arc::clone(&bitcoind_client),
 		Arc::clone(&bitcoind_client),
 	));
+
 	// Alternatively, you can use the `FilesystemStore` as a `Persist` directly, at the cost of
 	// larger `ChannelMonitor` update writes (but no deletion or cleanup):
 	//let persister = Arc::clone(&fs_store);
@@ -738,17 +739,22 @@ async fn start_ldk() {
 		Arc::clone(&persister),
 	));
 
+
 	// Step 7: Read ChannelMonitor state from disk
 	let mut channelmonitors = persister.read_all_channel_monitors_with_updates().unwrap();
 	// If you are using the `FilesystemStore` as a `Persist` directly, use
 	// `lightning::util::persist::read_channel_monitors` like this:
 	//read_channel_monitors(Arc::clone(&persister), Arc::clone(&keys_manager), Arc::clone(&keys_manager)).unwrap();
-
+	let (best_block_hash, best_block_height) = bitcoind_client.get_best_block().await.unwrap();
+	println!("🏗️  Best block: height={:?}, hash={:?}", 
+		best_block_hash, 
+		best_block_height);
+	
 	// Step 8: Poll for the best chain tip, which may be used by the channel manager & spv client
 	let polled_chain_tip = init::validate_best_block_header(bitcoind_client.as_ref())
 		.await
 		.expect("Failed to fetch best block header and best block");
-
+	
 	// Step 9: Initialize routing ProbabilisticScorer
 	let network_graph_path = format!("{}/network_graph", ldk_data_dir.clone());
 	let network_graph =

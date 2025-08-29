@@ -100,6 +100,7 @@ impl TryInto<MempoolMinFeeResponse> for JsonResponse {
 	}
 }
 
+#[derive(Debug)]
 pub struct BlockchainInfo {
 	pub latest_height: usize,
 	pub latest_blockhash: BlockHash,

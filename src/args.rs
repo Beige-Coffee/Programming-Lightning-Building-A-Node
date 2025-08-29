@@ -12,7 +12,7 @@ pub(crate) fn get_config_info() -> LdkUserInfo {
 	let bitcoind_rpc_username = "polaruser".to_string();
 	let bitcoind_rpc_password = "polarpass".to_string();
 
-	let bitcoind_rpc_host = "ff6566b4ae0f.ngrok.app".to_string();
+	let bitcoind_rpc_host = "lightning.ngrok.app".to_string();
 	let bitcoind_rpc_port = 80;
 	//let bitcoind_rpc_host = "127.0.0.1".to_string();
 	//let bitcoind_rpc_port = 18443;
