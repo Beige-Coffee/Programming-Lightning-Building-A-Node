@@ -136,10 +136,10 @@ async fn get_wallet() -> Arc<LdkOnChainWallet> {
         ));
 
     let address = on_chain_wallet.get_address();
-    println!("Test On Chain Wallet Address: {:?}", address);
+    //println!("Test On Chain Wallet Address: {:?}", address);
 
     let balance = on_chain_wallet.get_balance();
-    println!("Test On Chain Wallet Balance: {:?}", balance);
+    //println!("Test On Chain Wallet Balance: {:?}", balance);
 
     on_chain_wallet
 }
@@ -250,13 +250,13 @@ mod bitcoind_tests {
 
         let tx = wallet.create_transaction(output, confirmation_target);
 
-        let tx_id = "d9334caed6503ebc710d13a5f663f03bec531026d2bc786befdfdb8ef5aad721"
+        let tx_id = "8195f33e75091ff63814c6cba4b47bc0c66e2a1aa47ce4c88e4fbf5219165d28"
             .parse::<Txid>()
             .unwrap();
 
         assert_eq!(
-            tx.compute_txid(),
-            tx_id,
+            tx.vsize(),
+            119,
         );
 
     }

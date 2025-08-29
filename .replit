@@ -1,5 +1,9 @@
 modules = ["rust"]
 
+[nix]
+channel = "stable-25_05"
+packages = ["openssl", "pkg-config"]
+
 [[ports]]
 localPort = 9733
 externalPort = 80
