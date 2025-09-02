@@ -29,6 +29,10 @@ use lightning::util::logger::Logger;
 use std::collections::HashMap;
 use std::ops::Deref;
 use std::sync::{Mutex, RwLock};
+use bitcoin::blockdata::locktime::absolute::LockTime;
+use bitcoin::{
+	Amount,
+};
 use std::{
 	path::PathBuf,
 	sync::{mpsc::sync_channel, Arc},
@@ -211,43 +215,31 @@ where
 	/// 
 	/// This method handles the complete transaction creation process:
 	/// selecting UTXOs, calculating fees, and signing the transaction.
-	pub fn create_transaction(&self, outputs: Vec<HashMap<ScriptBuf, u64>>,
-													 confirmation_target: ConfirmationTarget) -> Transaction {
-		
-		// Get exclusive access to wallet for transaction creation
+	pub fn create_funding_transaction(&self,
+									output_script: ScriptBuf,
+									amount: Amount,
+									confirmation_target: ConfirmationTarget,
+									locktime: LockTime) -> Transaction {
+		// get lock on wallet
 		let mut wallet = self.inner.lock().unwrap();
 
-		// Initialize BDK transaction builder
+		// create tx builder
 		let mut tx_builder = wallet.build_tx();
 
-		// Add all requested outputs to the transaction
-		for output_map in outputs {
-			for (script, sats) in output_map {
-				let amount = bitcoin::Amount::from_sat(sats);
-				tx_builder.add_recipient(script, amount);
-			}
-		}
+		// get fee rate, assuming normal fees
+		let fee_rate =
+			self.fee_estimator.get_est_sat_per_1000_weight(confirmation_target) as u64;
+		let fees = FeeRate::from_sat_per_kwu(fee_rate);
 
-		// Calculate appropriate fee rate based on confirmation target
-		let fee_rate = self.fee_estimator.get_est_sat_per_1000_weight(confirmation_target);
+		tx_builder.add_recipient(output_script, amount).fee_rate(fees).nlocktime(locktime);
 
-		// Convert from sat/kw (LDK format) to sat/vB (BDK format)
-		let fee_rate_vb = fee_rate as u64 / 4; // Convert sat/kw to sat/vB
-		tx_builder.fee_rate(FeeRate::from_sat_per_vb(fee_rate_vb).unwrap());
-
-		// Build the PSBT (Partially Signed Bitcoin Transaction)
+		// build the transaction
 		let mut psbt = tx_builder.finish().unwrap();
 
-		// Configure signing options
-		let sign_options = SignOptions { 
-			trust_witness_utxo: true,  // Trust witness UTXO data for SegWit inputs
-			..Default::default() 
-		};
+		let sign_options = SignOptions::default();
 
-		// Sign the transaction with wallet's private keys
 		wallet.sign(&mut psbt, sign_options).unwrap();
 
-		// Extract the final signed transaction
 		let tx: Transaction = psbt.extract_tx().unwrap();
 
 		tx

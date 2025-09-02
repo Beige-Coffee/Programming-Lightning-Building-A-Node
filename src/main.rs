@@ -58,6 +58,7 @@ use lightning::util::persist::{
 	self, KVStore, MonitorUpdatingPersister, OUTPUT_SWEEPER_PERSISTENCE_KEY,
 	OUTPUT_SWEEPER_PERSISTENCE_PRIMARY_NAMESPACE, OUTPUT_SWEEPER_PERSISTENCE_SECONDARY_NAMESPACE,
 };
+use bitcoin::blockdata::locktime::absolute::LockTime;
 use lightning::util::ser::{Readable, ReadableArgs, Writeable, Writer};
 use lightning::util::sweep as ldk_sweep;
 use lightning::{chain, impl_writeable_tlv_based, impl_writeable_tlv_based_enum};
@@ -81,6 +82,7 @@ use std::path::Path;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex, RwLock};
 use std::time::{Duration, SystemTime};
+use bitcoin::{Amount, FeeRate};
 
 #[derive(Copy, Clone)]
 pub(crate) enum HTLCStatus {
@@ -231,13 +233,21 @@ async fn handle_ldk_events(
 		} => {
 			// Construct the raw transaction with one output, that is paid the amount of the
 			// channel.
-			let mut outputs = vec![HashMap::with_capacity(1)];
-			outputs[0].insert(output_script, channel_value_satoshis as u64);
 
 			let confirmation_target = ConfirmationTarget::AnchorChannelFee;
 
+			// We set nLockTime to the current height to discourage fee sniping.
+			let cur_height = channel_manager.current_best_block().height;
+			let locktime = LockTime::from_height(cur_height).unwrap_or(LockTime::ZERO);
+
+			let channel_amount = Amount::from_sat(channel_value_satoshis);
+
 			let final_tx: Transaction =
-				on_chain_wallet.create_transaction(outputs, confirmation_target);
+				on_chain_wallet.create_funding_transaction(
+				output_script,
+				channel_amount,
+				confirmation_target,
+				locktime);
 
 			// Give the funding transaction back to LDK for opening the channel.
 			if channel_manager
@@ -249,7 +259,7 @@ async fn handle_ldk_events(
 				print!("> ");
 				std::io::stdout().flush().unwrap();
 			}
-		},
+			},
 		Event::FundingTxBroadcastSafe { .. } => {
 			// We don't use the manual broadcasting feature, so this event should never be seen.
 		},
