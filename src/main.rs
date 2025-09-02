@@ -640,56 +640,16 @@ async fn start_ldk() {
 		key
 	};
 
-	// Initialize the on-chain wallet
-	let xprv = bitcoin::bip32::Xpriv::new_master(args.network, &keys_seed)
-		.map_err(|e| {
-			log_error!(logger, "Failed to derive master secret: {}", e);
-		})
-		.unwrap();
-
-	let descriptor = Bip84(xprv, KeychainKind::External);
-	let change_descriptor = Bip84(xprv, KeychainKind::Internal);
 	let on_chain_wallet_file_path = ".ldk/on_chain_wallet.sqlite3";
-	//let on_chain_wallet_file_path = "./test_dir/test_wallet.sqlite3";
-	let mut conn = ::bdk_wallet::rusqlite::Connection::open(on_chain_wallet_file_path)
-		.map_err(|e| {
-			log_error!(logger, "Failed to establish on-chain wallet database connection: {}", e);
-		})
-		.unwrap();
 
-	let wallet_opt = BdkWallet::load()
-		.descriptor(KeychainKind::External, Some(descriptor.clone()))
-		.descriptor(KeychainKind::Internal, Some(change_descriptor.clone()))
-		.extract_keys()
-		.check_network(args.network)
-		.load_wallet(&mut conn)
-		.map_err(|e| {
-			log_error!(logger, "Failed to load BDK wallet: {:?}", e);
-		})
-		.unwrap();
-
-	let bdk_wallet = match wallet_opt {
-		Some(wallet) => wallet,
-		None => BdkWallet::create(descriptor, change_descriptor)
-			.network(args.network)
-			.create_wallet(&mut conn)
-			.map_err(|e| {
-				log_error!(logger, "Failed to set up wallet: {}", e);
-			})
-			.unwrap(),
-	};
-
-	let on_chain_wallet = Arc::new(OnChainWallet::new(
-		bdk_wallet,
-		args.bitcoind_rpc_host.clone(),
-		args.bitcoind_rpc_port,
-		args.bitcoind_rpc_username.clone(),
-		on_chain_wallet_file_path.to_string(),
-		args.bitcoind_rpc_password.clone(),
+	let on_chain_wallet = Arc::new(OnChainWallet::new_from_seed(
+		&keys_seed,
+		args.network.clone(),
+		on_chain_wallet_file_path,
 		fee_estimator.clone(),
 		broadcaster.clone(),
 		Arc::clone(&logger),
-	));
+	)); 
 
 	// Start wallet sync in a background task
 	let wallet_sync = Arc::clone(&on_chain_wallet);

@@ -3,11 +3,13 @@ use bdk_esplora::esplora_client::{Builder, BlockingClient};
 use bdk_esplora::{esplora_client, EsploraExt};
 use bdk_chain::ChainPosition::{Confirmed, Unconfirmed};
 use bdk_wallet::rusqlite::Connection;
-use bdk_wallet::PersistedWallet as BdkWallet;
+use bdk_wallet::PersistedWallet;
 use bdk_wallet::{
 	bitcoin::{Block, Network},
 	KeychainKind, SignOptions, Wallet,
 };
+use ::bdk_wallet::Wallet as BdkWallet;
+use bitcoin::network::Network as BitcoinNetwork;
 use std::{collections::BTreeSet, io::Write};
 use bdk_wallet::{AddressInfo, Balance};
 use bitcoin::address::Address;
@@ -33,6 +35,9 @@ use std::{
 	thread::spawn,
 	time::Instant,
 };
+use lightning::log_error;
+use ::bdk_wallet::template::Bip84;
+
 
 const STOP_GAP: usize = 5;
 const PARALLEL_REQUESTS: usize = 5;
@@ -45,7 +50,7 @@ where
 	L::Target: Logger,
 {
 	// A BDK on-chain wallet.
-	inner: Mutex<BdkWallet<Connection>>,
+	inner: Mutex<PersistedWallet<Connection>>,
 	client: Arc<BlockingClient>,
 	path_to_db: String,
 	broadcaster: B,
@@ -59,18 +64,46 @@ where
 	E::Target: FeeEstimator,
 	L::Target: Logger,
 {
-	pub(crate) fn new(
-		wallet: BdkWallet<Connection>, host: String, port: u16, rpc_user: String,
-		path_to_db: String, rpc_password: String, fee_estimator: E, broadcaster: B, logger: L,
+	pub(crate) fn new_from_seed(
+		keys_seed: &[u8], network: BitcoinNetwork,
+		path_to_db: &str, fee_estimator: E, broadcaster: B, logger: L,
 	) -> Self {
-		
-		let inner = Mutex::new(wallet);
 
-		let esplora_url = "https://ee5c65241ab6.ngrok.app".to_string();
+		// Initialize the on-chain wallet
+		let xprv = bitcoin::bip32::Xpriv::new_master(network, &keys_seed).unwrap();
+		let descriptor = Bip84(xprv, KeychainKind::External);
+		let change_descriptor = Bip84(xprv, KeychainKind::Internal);
+		let mut conn = ::bdk_wallet::rusqlite::Connection::open(path_to_db).unwrap();
+
+		let wallet_opt = BdkWallet::load()
+			.descriptor(KeychainKind::External, Some(descriptor.clone()))
+			.descriptor(KeychainKind::Internal, Some(change_descriptor.clone()))
+			.extract_keys()
+			.check_network(network)
+			.load_wallet(&mut conn)
+			.map_err(|e| {
+				log_error!(logger, "Failed to load BDK wallet: {:?}", e);
+			})
+			.unwrap();
+
+		let bdk_wallet = match wallet_opt {
+			Some(wallet) => wallet,
+			None => BdkWallet::create(descriptor, change_descriptor)
+				.network(network)
+				.create_wallet(&mut conn)
+				.map_err(|e| {
+					log_error!(logger, "Failed to set up wallet: {}", e);
+				})
+				.unwrap(),
+};
+		
+		let inner = Mutex::new(bdk_wallet);
+
+		let esplora_url = "https://01c81926ec00.ngrok.app".to_string();
 
 		let client = Arc::new(esplora_client::Builder::new(&esplora_url).build_blocking());
 
-		let this = Self { inner, client, path_to_db, broadcaster, fee_estimator, logger };
+		let this = Self { inner, client, path_to_db: path_to_db.to_string(), broadcaster, fee_estimator, logger };
 
 		this.full_scan();
 

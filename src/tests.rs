@@ -86,54 +86,18 @@ async fn get_wallet() -> Arc<LdkOnChainWallet> {
         key
     };
 
-    // Initialize the on-chain wallet 
-    let xprv = bitcoin::bip32::Xpriv::new_master(Network::Regtest, &keys_seed).map_err(|e| {
-        log_error!(logger, "Failed to derive master secret: {}", e);
-    }).unwrap();
-
-    let descriptor = Bip84(xprv, KeychainKind::External);
-    let change_descriptor = Bip84(xprv, KeychainKind::Internal);
-    let on_chain_wallet_file_path = "./test_dir/test_wallet.sqlite3";
-    let mut conn = ::bdk_wallet::rusqlite::Connection::open(on_chain_wallet_file_path).map_err(|e| {
-        log_error!(logger, "Failed to establish on-chain wallet database connection: {}", e);
-    }).unwrap();
-
-    let wallet_opt = BdkWallet::load()
-        .descriptor(KeychainKind::External, Some(descriptor.clone()))
-        .descriptor(KeychainKind::Internal, Some(change_descriptor.clone()))
-        .extract_keys()
-        .check_network(Network::Regtest)
-        .load_wallet(&mut conn)
-        .map_err(|e| {
-            log_error!(logger, "Failed to load BDK wallet: {:?}", e);
-        })
-        .unwrap();
-
-    let bdk_wallet = match wallet_opt {
-        Some(wallet) => wallet,
-        None => BdkWallet::create(descriptor, change_descriptor)
-            .network(Network::Regtest)
-            .create_wallet(&mut conn)
-            .map_err(|e| {
-                log_error!(logger, "Failed to set up wallet: {}", e);
-            })
-            .unwrap()
-    };
-
     let bitcoind_client = Arc::new(get_bitcoind_client().await);
+    let network = Network::Regtest;
+    let on_chain_wallet_file_path = "./test_dir/test_wallet.sqlite3";
 
-
-    let on_chain_wallet = Arc::new(OnChainWallet::new(
-        bdk_wallet,
-        args.bitcoind_rpc_host.clone(),
-        args.bitcoind_rpc_port,
-        args.bitcoind_rpc_username.clone(),
-        on_chain_wallet_file_path.to_string(),
-        args.bitcoind_rpc_password.clone(),
+    let on_chain_wallet = Arc::new(OnChainWallet::new_from_seed(
+		&keys_seed,
+		args.network.clone(),
+		on_chain_wallet_file_path,
         bitcoind_client.clone(),
         bitcoind_client.clone(),
-        Arc::clone(&logger),
-        ));
+		Arc::clone(&logger),
+	)); 
 
     let address = on_chain_wallet.get_address();
     //println!("Test On Chain Wallet Address: {:?}", address);
@@ -142,6 +106,7 @@ async fn get_wallet() -> Arc<LdkOnChainWallet> {
     //println!("Test On Chain Wallet Balance: {:?}", balance);
 
     on_chain_wallet
+
 }
 
 #[cfg(test)]
