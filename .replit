@@ -32,3 +32,6 @@ author = 17531197
 [[workflows.workflow.tasks]]
 task = "shell.exec"
 args = "cargo test"
+
+[agent]
+expertMode = true
