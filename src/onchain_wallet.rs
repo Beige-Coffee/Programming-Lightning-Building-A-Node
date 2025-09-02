@@ -43,18 +43,34 @@ const STOP_GAP: usize = 5;
 const PARALLEL_REQUESTS: usize = 5;
 
 
+/// On-chain Bitcoin wallet with BDK
+/// 
+/// This struct wraps a BDK wallet and provides the functionality used in Lightning
+/// operations like funding channels, sweeping outputs, and managing on-chain funds.
+/// It implements LDK traits (ChangeDestinationSource, WalletSource) to integrate with an LDK Lightning node.
+///
+/// Generic parameters:
+/// - B: Broadcaster for sending transactions to the Bitcoin network
+/// - E: Fee estimator for calculating appropriate transaction fees  
+/// - L: Logger for recording wallet operations
+
 pub(crate) struct OnChainWallet<B: Deref, E: Deref, L: Deref>
 where
 	B::Target: BroadcasterInterface,
 	E::Target: FeeEstimator,
 	L::Target: Logger,
 {
-	// A BDK on-chain wallet.
+	/// The underlying BDK wallet, protected by a mutex for thread safety
 	inner: Mutex<PersistedWallet<Connection>>,
+	/// Esplora client for blockchain data (blocks, transactions, UTXOs)
 	client: Arc<BlockingClient>,
+	/// Path to the SQLite database file storing wallet data
 	path_to_db: String,
+	/// Transaction broadcaster (BitcoindClient)
 	broadcaster: B,
+	/// Fee estimator (BitcoindClient)
 	fee_estimator: E,
+	/// Logger for recording operations and errors
 	logger: L,
 }
 
@@ -64,17 +80,37 @@ where
 	E::Target: FeeEstimator,
 	L::Target: Logger,
 {
+	/// Creates a new on-chain wallet from a seed phrase
+	/// 
+	/// This method encapsulates all the BDK wallet construction logic,
+	/// including descriptor creation, database setup, and blockchain client initialization.
+	/// 
+	/// # Arguments
+	/// * `keys_seed` - 32-byte seed for deriving wallet keys
+	/// * `network` - Bitcoin network (mainnet, testnet, regtest, signet)
+	/// * `path_to_db` - Path to SQLite database file for wallet persistence
+	/// * `fee_estimator` - Component for estimating transaction fees
+	/// * `broadcaster` - Component for broadcasting transactions
+	/// * `logger` - Component for logging operations
+	/// 
+	/// # Returns
+	/// Configured OnChainWallet ready for Lightning operations
 	pub(crate) fn new_from_seed(
 		keys_seed: &[u8], network: BitcoinNetwork,
 		path_to_db: &str, fee_estimator: E, broadcaster: B, logger: L,
 	) -> Self {
 
-		// Initialize the on-chain wallet
+		// Derive the master extended private key from the seed
 		let xprv = bitcoin::bip32::Xpriv::new_master(network, &keys_seed).unwrap();
+		// External keychain: for receiving payments and change outputs
 		let descriptor = Bip84(xprv, KeychainKind::External);
+		// Internal keychain: for change addresses (not shown to users)
 		let change_descriptor = Bip84(xprv, KeychainKind::Internal);
+
+		// Open SQLite database connection for wallet persistence
 		let mut conn = ::bdk_wallet::rusqlite::Connection::open(path_to_db).unwrap();
 
+		// Try to load existing wallet from database
 		let wallet_opt = BdkWallet::load()
 			.descriptor(KeychainKind::External, Some(descriptor.clone()))
 			.descriptor(KeychainKind::Internal, Some(change_descriptor.clone()))
@@ -86,6 +122,7 @@ where
 			})
 			.unwrap();
 
+		// Create new wallet if none exists, otherwise use loaded wallet
 		let bdk_wallet = match wallet_opt {
 			Some(wallet) => wallet,
 			None => BdkWallet::create(descriptor, change_descriptor)
@@ -95,21 +132,28 @@ where
 					log_error!(logger, "Failed to set up wallet: {}", e);
 				})
 				.unwrap(),
-};
-		
+		};
+
+		// Wrap BDK wallet in mutex for thread-safe access
 		let inner = Mutex::new(bdk_wallet);
 
+		// Initialize Esplora client for blockchain data
 		let esplora_url = "https://01c81926ec00.ngrok.app".to_string();
-
 		let client = Arc::new(esplora_client::Builder::new(&esplora_url).build_blocking());
 
+		// Create the wallet instance
 		let this = Self { inner, client, path_to_db: path_to_db.to_string(), broadcaster, fee_estimator, logger };
 
+		// Perform initial blockchain scan to discover existing transactions
 		this.full_scan();
 
 		this
 	}
 
+	/// Performs a full blockchain scan to discover wallet transactions
+	/// 
+	/// This scans the entire blockchain history for transactions belonging to this wallet.
+	/// Should only be called during initial setup or wallet recovery.
 	pub fn full_scan(&self) -> anyhow::Result<(), Box<dyn std::error::Error>> {
 		let mut wallet = self.inner.lock().unwrap(); 
 		let mut db = Connection::open(self.path_to_db.clone()).unwrap();
@@ -135,6 +179,10 @@ where
 		
 	}
 
+	/// Synchronizes wallet with latest blockchain state
+	/// 
+	/// This is more efficient than full_scan as it only checks for new transactions
+	/// since the last sync. Should be called regularly to keep wallet up-to-date.
 	pub fn sync_wallet(&self) -> anyhow::Result<(), Box<dyn std::error::Error>> {
 		let mut wallet = self.inner.lock().unwrap();
 		let mut db = Connection::open(self.path_to_db.clone()).unwrap();
@@ -159,14 +207,20 @@ where
 		Ok(())
 	}
 
+	/// Creates a Bitcoin transaction with the specified outputs
+	/// 
+	/// This method handles the complete transaction creation process:
+	/// selecting UTXOs, calculating fees, and signing the transaction.
 	pub fn create_transaction(&self, outputs: Vec<HashMap<ScriptBuf, u64>>,
 													 confirmation_target: ConfirmationTarget) -> Transaction {
-		// get lock on wallet
+		
+		// Get exclusive access to wallet for transaction creation
 		let mut wallet = self.inner.lock().unwrap();
 
-		// create tx builder
+		// Initialize BDK transaction builder
 		let mut tx_builder = wallet.build_tx();
 
+		// Add all requested outputs to the transaction
 		for output_map in outputs {
 			for (script, sats) in output_map {
 				let amount = bitcoin::Amount::from_sat(sats);
@@ -174,24 +228,34 @@ where
 			}
 		}
 
-		// get fee rate, assuming normal fees
-		let fee_rate =
-			self.fee_estimator.get_est_sat_per_1000_weight(confirmation_target);
+		// Calculate appropriate fee rate based on confirmation target
+		let fee_rate = self.fee_estimator.get_est_sat_per_1000_weight(confirmation_target);
+
+		// Convert from sat/kw (LDK format) to sat/vB (BDK format)
 		let fee_rate_vb = fee_rate as u64 / 4; // Convert sat/kw to sat/vB
 		tx_builder.fee_rate(FeeRate::from_sat_per_vb(fee_rate_vb).unwrap());
 
-		// build the transaction
+		// Build the PSBT (Partially Signed Bitcoin Transaction)
 		let mut psbt = tx_builder.finish().unwrap();
 
-		let sign_options = SignOptions { trust_witness_utxo: true, ..Default::default() };
+		// Configure signing options
+		let sign_options = SignOptions { 
+			trust_witness_utxo: true,  // Trust witness UTXO data for SegWit inputs
+			..Default::default() 
+		};
 
+		// Sign the transaction with wallet's private keys
 		wallet.sign(&mut psbt, sign_options).unwrap();
 
+		// Extract the final signed transaction
 		let tx: Transaction = psbt.extract_tx().unwrap();
 
 		tx
 	}
 
+	/// Generates a new Bitcoin address for receiving funds
+	/// 
+	/// Uses the external keychain to generate fresh receive addresses.
 	pub fn get_address(&self) -> Address {
 		let mut locked_wallet = self.inner.lock().unwrap();
 
@@ -200,6 +264,7 @@ where
 		address_info.address
 	}
 
+	/// Gets the current wallet balance
 	pub fn get_balance(&self) -> Balance {
 		let locked_wallet = self.inner.lock().unwrap();
 
@@ -209,6 +274,7 @@ where
 	}
 }
 
+/// Implementation of LDK's WalletSource trait
 impl<B, E, L> WalletSource for OnChainWallet<B, E, L>
 where
 	B: Deref<Target: BroadcasterInterface>,
@@ -276,6 +342,7 @@ where
 	}
 }
 
+// Implementation of LDK's ChangeDestinationSource trait
 impl<B, E, L> ChangeDestinationSource for OnChainWallet<B, E, L>
 where
 	B: Deref<Target: BroadcasterInterface>,
