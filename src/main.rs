@@ -83,6 +83,8 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex, RwLock};
 use std::time::{Duration, SystemTime};
 use bitcoin::{Amount, FeeRate};
+use bitcoin::bip32::{ChildNumber, Xpriv, Xpub};
+use bitcoin::secp256k1::{Secp256k1, SecretKey};
 
 #[derive(Copy, Clone)]
 pub(crate) enum HTLCStatus {
@@ -673,8 +675,14 @@ async fn start_ldk() {
 		}
 	});
 
+	let xprv = Xpriv::new_master(args.network, &keys_seed).unwrap();
+	let ldk_child_number = ChildNumber::Hardened { index: 535 };
+	let secp = Secp256k1::new(); 
+	let ldk_xprv = xprv.derive_priv(&secp, &ldk_child_number).expect("Your RNG is busted");
+	let ldk_seed: [u8; 32] = ldk_xprv.private_key.secret_bytes();
+
 	let cur = SystemTime::now().duration_since(SystemTime::UNIX_EPOCH).unwrap();
-	let keys_manager = Arc::new(KeysManager::new(&keys_seed, cur.as_secs(), cur.subsec_nanos()));
+	let keys_manager = Arc::new(KeysManager::new(&ldk_seed, cur.as_secs(), cur.subsec_nanos()));
 
 	let bump_tx_event_handler = Arc::new(BumpTransactionEventHandler::new(
 		Arc::clone(&broadcaster),
