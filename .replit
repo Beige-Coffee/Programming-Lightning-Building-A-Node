@@ -13,7 +13,7 @@ localPort = 9735
 externalPort = 3000
 
 [workflows]
-runButton = "Run Tests"
+runButton = "Project"
 
 [[workflows.workflow]]
 name = "Start Node"
@@ -32,6 +32,26 @@ author = 17531197
 [[workflows.workflow.tasks]]
 task = "shell.exec"
 args = "cargo test"
+
+[[workflows.workflow]]
+name = "Project"
+mode = "parallel"
+author = "agent"
+
+[[workflows.workflow.tasks]]
+task = "workflow.run"
+args = "Rust Build"
+
+[[workflows.workflow]]
+name = "Rust Build"
+author = "agent"
+
+[[workflows.workflow.tasks]]
+task = "shell.exec"
+args = "cargo check"
+
+[workflows.workflow.metadata]
+outputType = "console"
 
 [agent]
 expertMode = true

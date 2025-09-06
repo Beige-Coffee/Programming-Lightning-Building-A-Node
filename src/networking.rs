@@ -32,21 +32,17 @@ async fn setup_inbound(peer_manager: Arc<MockPeerManager>, _stream: std::net::Tc
 pub async fn start_network_listener(
     peer_manager: Arc<MockPeerManager>,
     listening_port: u16,
-    stop_listen: Arc<AtomicBool>,
 ) {
     tokio::spawn(async move {
         let listener = tokio::net::TcpListener::bind(format!("[::]:{}", listening_port))
             .await
             .expect("Failed to bind to listen port - is something else already listening on it?");
         loop {
-            let peer_mgr = peer_manager.clone();
             let tcp_stream = listener.accept().await.unwrap().0;
-            if stop_listen.load(Ordering::Acquire) {
-                return;
-            }
+            let peer_mgr = peer_manager.clone();
             tokio::spawn(async move {
                 setup_inbound(
-                    peer_mgr.clone(),
+                    peer_mgr,
                     tcp_stream.into_std().unwrap(),
                 )
                 .await;

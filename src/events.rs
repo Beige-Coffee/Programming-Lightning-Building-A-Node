@@ -13,6 +13,7 @@ use crate::internal::types::{KeysManager, PeerManager, FileStore};
 pub async fn handle_ldk_events(
     channel_manager: &ChannelManager, 
     bitcoind_client: BitcoindClient,
+    on_chain_wallet: 
     keys_manager: KeysManager, 
     peer_manager: PeerManager,
     file_store: FileStore,
@@ -26,25 +27,21 @@ pub async fn handle_ldk_events(
             output_script,
             ..
         } => {
-            // Construct the raw transaction with one output, that is paid the amount of the
-            // channel.
-            let addr = WitnessProgram::from_scriptpubkey(
-                &output_script.as_bytes(),
-                Regtest)
-                .expect("Lightning funding tx should always be to a SegWit output")
-                .to_address();
             
-            let mut outputs = vec![HashMap::with_capacity(1)];
-            outputs[0].insert(addr, channel_value_satoshis as f64 / 100_000_000.0);
-            
-            let raw_tx = bitcoind_client.create_raw_transaction(outputs).await;
+            let confirmation_target = ConfirmationTarget::AnchorChannelFee;
 
-            // Have your wallet put the inputs into the transaction such that the output is
-            // satisfied.
-            let funded_tx = bitcoind_client.fund_raw_transaction(raw_tx).await;
+            // We set nLockTime to the current height to discourage fee sniping.
+            let cur_height = channel_manager.current_best_block().height;
+            let locktime = LockTime::from_height(cur_height).unwrap_or(LockTime::ZERO);
 
-            // Sign the final funding transaction and give it to LDK, who will eventually broadcast it.
-            let signed_tx = bitcoind_client.sign_raw_transaction_with_wallet(funded_tx).await;
+            let channel_amount = Amount::from_sat(channel_value_satoshis);
+
+            let final_tx: Transaction =
+                on_chain_wallet.create_funding_transaction(
+                output_script,
+                channel_amount,
+                confirmation_target,
+                locktime);
 
             // Give the funding transaction back to LDK for opening the channel.
             channel_manager.funding_transaction_generated(

@@ -218,10 +218,9 @@ mod bitcoind_tests {
 		// Setup
 		let listening_port = 9735; // Fixed port instead of 0
 		let peer_manager = Arc::new(MockPeerManager::new());
-		let stop_listen = Arc::new(AtomicBool::new(false));
 
 		// Start the listener
-		start_network_listener(peer_manager.clone(), listening_port, stop_listen.clone()).await;
+		start_network_listener(peer_manager.clone(), listening_port).await;
 
 		// Wait briefly for the listener to bind
 		tokio::time::sleep(Duration::from_millis(100)).await;
