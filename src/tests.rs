@@ -9,6 +9,7 @@ use crate::hex_utils;
 use crate::internal::bitcoind_client::BitcoindClient as BitcoinClient;
 use crate::internal::channel_manager::ChannelManager;
 use crate::internal::types::{FileStore, KeysManager, PeerManager};
+use crate::internal::types::OnChainWallet as MockOnChainWallet;
 use crate::keys_manager::NodeKeysManager;
 use crate::logger::FilesystemLogger;
 use crate::networking::start_network_listener;
@@ -183,35 +184,31 @@ mod bitcoind_tests {
 	}
 
 	#[tokio::test]
-    async fn test_07_create_transaction() {
+	async fn test_07_create_transaction() {
+		let wallet = get_wallet().await;
 
-        let wallet = get_wallet().await;
+		let script = ScriptBuf::new();
+		let sats: u64 = 1000;
 
-        let script = ScriptBuf::new();
-        let sats: u64 = 1000;
+		let confirmation_target = ConfirmationTarget::AnchorChannelFee;
 
-				let confirmation_target = ConfirmationTarget::AnchorChannelFee;
-	
-				let locktime = LockTime::ZERO;
-	
-				let channel_amount = Amount::from_sat(sats);
+		let locktime = LockTime::ZERO;
 
-				let tx: Transaction = wallet.create_funding_transaction(
-											script,
-											channel_amount,
-											confirmation_target,
-											locktime);
+		let channel_amount = Amount::from_sat(sats);
 
-        let tx_id = "8195f33e75091ff63814c6cba4b47bc0c66e2a1aa47ce4c88e4fbf5219165d28"
-            .parse::<Txid>()
-            .unwrap();
+		let tx: Transaction = wallet.create_funding_transaction(
+			script,
+			channel_amount,
+			confirmation_target,
+			locktime,
+		);
 
-        assert_eq!(
-            tx.vsize(),
-            119,
-        );
+		let tx_id = "8195f33e75091ff63814c6cba4b47bc0c66e2a1aa47ce4c88e4fbf5219165d28"
+			.parse::<Txid>()
+			.unwrap();
 
-    }
+		assert_eq!(tx.vsize(), 119,);
+	}
 
 	#[tokio::test]
 	async fn test_10_start_listener() {
@@ -253,6 +250,9 @@ mod bitcoind_tests {
 		let keys_manager = KeysManager::new();
 		let peer_manager = PeerManager::new();
 		let file_store = FileStore::new();
+		//let onchain_wallet = MockOnChainWallet::new();
+		let onchain_wallet = get_wallet().await;
+		let wallet = &*onchain_wallet;
 
 		let temporary_channel_id = ChannelId::new_zero();
 		let user_channel_id = 0;
@@ -271,6 +271,7 @@ mod bitcoind_tests {
 		handle_ldk_events(
 			&channel_manager,
 			bitcoin_client,
+			wallet,
 			keys_manager,
 			peer_manager,
 			file_store,
@@ -280,7 +281,6 @@ mod bitcoind_tests {
 
 		// Check final state
 		let final_funding_tx = channel_manager.funding_tx.lock().unwrap();
-		println!("Final funding_tx: {:?}", final_funding_tx);
 
 		assert!(final_funding_tx.is_some(), "Funding transaction should be present");
 	}

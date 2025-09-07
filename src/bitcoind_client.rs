@@ -59,7 +59,7 @@ impl BitcoindClient {
 		handle: tokio::runtime::Handle, logger: Arc<FilesystemLogger>,
 	) -> std::io::Result<Self> {
 		let http_endpoint = HttpEndpoint::for_host(host.clone()).with_port(port);
-		
+
 		let rpc_credentials = base64::encode(format!("{}:{}", rpc_user, rpc_password));
 		println!(
 				"Connecting to bitcoind: host={}, port={}, rpc_user={}, rpc_pass={}",
@@ -84,7 +84,7 @@ impl BitcoindClient {
 		);
 
 
-		
+
 		let mut fees: HashMap<ConfirmationTarget, AtomicU32> = HashMap::new();
 
 		fees.insert(ConfirmationTarget::MaximumFeeEstimate, AtomicU32::new(50000));
@@ -120,7 +120,7 @@ impl BitcoindClient {
 				client.bitcoind_rpc_client.clone(),
 				handle,
 		);
-		
+
 		Ok(client)
 	}
 

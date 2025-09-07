@@ -6,6 +6,12 @@ use std::io::Error;
 use lightning::ln::channelmanager::{PaymentId, RecipientOnionFields, Retry};
 use lightning::types::payment::{PaymentHash, PaymentPreimage, PaymentSecret};
 use lightning::routing::router::{RouteParameters};
+use bitcoin::blockdata::transaction::Transaction;
+
+pub struct BestBlock {
+    pub block_hash: String,
+    pub height: u32,
+}
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum RetryableSendFailure {
@@ -16,7 +22,7 @@ pub enum RetryableSendFailure {
 }
 
 pub struct ChannelManager {
-  pub funding_tx: Mutex<Option<(ChannelId, PublicKey, String)>>,
+  pub funding_tx: Mutex<Option<(ChannelId, PublicKey, Transaction)>>,
   pub channels: Mutex<Option<(u128, u64)>>,
   pub payments: Mutex<Option<PaymentId>>,
 }
@@ -34,7 +40,7 @@ impl ChannelManager {
     &self,
     temporary_channel_id: ChannelId,
     counterparty_node_id: PublicKey,
-    funding_transaction: String,
+    funding_transaction: Transaction,
   ) {
     let mut funding_tx = self.funding_tx.lock().unwrap();
 
@@ -56,6 +62,13 @@ impl ChannelManager {
     let chan_id = ChannelId::new_zero();
 
     Ok(chan_id)
+  }
+
+  pub fn current_best_block(&self) -> BestBlock {
+    BestBlock {
+      block_hash: "000".to_string(),
+      height: 300
+    }
   }
 
   pub fn send_payment(&self, payment_hash: PaymentHash, recipient_onion: RecipientOnionFields, payment_id: PaymentId, route_params: RouteParameters, retry_strategy: Retry) -> Result<(), RetryableSendFailure> {

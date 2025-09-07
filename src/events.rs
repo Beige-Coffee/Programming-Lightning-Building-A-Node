@@ -1,6 +1,7 @@
 #![allow(dead_code, unused_imports, unused_variables, unused_must_use)]
 use crate::internal::bitcoind_client::{BitcoindClient};
 use crate::internal::channel_manager::{ChannelManager};
+use lightning::chain::chaininterface::{BroadcasterInterface, ConfirmationTarget, FeeEstimator};
 use lightning::events::{Event};
 use bitcoin_bech32::WitnessProgram;
 use bitcoin_bech32::constants::Network::Regtest;
@@ -9,11 +10,16 @@ use bitcoin::blockdata::transaction::Transaction;
 use bitcoin::consensus::{encode, Decodable, Encodable};
 use crate::hex_utils;
 use crate::internal::types::{KeysManager, PeerManager, FileStore};
+use crate::LdkOnChainWallet as OnChainWallet;
+use bitcoin::blockdata::locktime::absolute::LockTime;
+use bitcoin::{
+    Amount,
+};
 
 pub async fn handle_ldk_events(
     channel_manager: &ChannelManager, 
     bitcoind_client: BitcoindClient,
-    on_chain_wallet: 
+    on_chain_wallet: &OnChainWallet,
     keys_manager: KeysManager, 
     peer_manager: PeerManager,
     file_store: FileStore,
@@ -28,16 +34,15 @@ pub async fn handle_ldk_events(
             ..
         } => {
             
-            let confirmation_target = ConfirmationTarget::AnchorChannelFee;
+            let confirmation_target = ConfirmationTarget::NonAnchorChannelFee;
 
             // We set nLockTime to the current height to discourage fee sniping.
             let cur_height = channel_manager.current_best_block().height;
-            let locktime = LockTime::from_height(cur_height).unwrap_or(LockTime::ZERO);
+            let locktime = LockTime::from_height(cur_height).unwrap();
 
             let channel_amount = Amount::from_sat(channel_value_satoshis);
 
-            let final_tx: Transaction =
-                on_chain_wallet.create_funding_transaction(
+            let final_tx = on_chain_wallet.create_funding_transaction(
                 output_script,
                 channel_amount,
                 confirmation_target,
@@ -47,7 +52,7 @@ pub async fn handle_ldk_events(
             channel_manager.funding_transaction_generated(
                 temporary_channel_id,
                 counterparty_node_id,
-                signed_tx)
+                final_tx)
         },
         Event::FundingTxBroadcastSafe { .. } => {},
         Event::PaymentClaimable { .. } => {},
