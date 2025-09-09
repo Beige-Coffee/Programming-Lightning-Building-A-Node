@@ -15,18 +15,15 @@ use std::time::Duration;
   // Open Channel Exercise
 //
 pub fn open_channel(
-	peer_pubkey: PublicKey, channel_amt_sat: u64, announce_for_forwarding: bool,
+	peer_pubkey: PublicKey, channel_amt_sat: u64, announce_channel: bool,
 	with_anchors: bool, channel_manager: &ChannelManager,
 ) -> Result<(), ()> {
   
   let config = UserConfig {
-    channel_handshake_limits: ChannelHandshakeLimits {
-      // lnd's max to_self_delay is 2016, so we want to be compatible.
-      their_to_self_delay: 2016,
-      ..Default::default()
-    },
+    channel_handshake_limits: ChannelHandshakeLimits::default(),
     channel_handshake_config: ChannelHandshakeConfig {
-      announce_for_forwarding,
+      announce_for_forwarding: announce_channel,
+      their_channel_reserve_proportional_millionths: 1_000,
       negotiate_anchors_zero_fee_htlc_tx: with_anchors,
       ..Default::default()
     },
