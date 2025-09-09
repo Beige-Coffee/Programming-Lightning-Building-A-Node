@@ -281,6 +281,7 @@ mod bitcoind_tests {
 
 		// Check final state
 		let final_funding_tx = channel_manager.funding_tx.lock().unwrap();
+		
 
 		assert!(final_funding_tx.is_some(), "Funding transaction should be present");
 	}
@@ -302,10 +303,17 @@ mod bitcoind_tests {
 		);
 
 		// Check final state
-		let final_channels = channel_manager.channels.lock().unwrap();
-		println!("Final channels: {:?}", final_channels);
+		let final_channel = channel_manager.channel.lock().unwrap();
 
-		assert!(final_channels.is_some(), "New channel should be present");
+		assert!(final_channel.is_some(), "New channel should be present");
+
+		// Check UserConfig
+		if let Some((user_channel_id, channel_value_satoshis, config)) = &*final_channel {
+				assert_eq!(config.channel_handshake_config.their_channel_reserve_proportional_millionths, 1_000);
+				assert_eq!(config.channel_handshake_config.negotiate_anchors_zero_fee_htlc_tx, true);
+		} else {
+				panic!("Channel configuration incorrect");
+		}
 	}
 
 	#[test]
@@ -347,7 +355,7 @@ mod bitcoind_tests {
 		);
 
 		// Check final state
-		let final_payments = channel_manager.payments.lock().unwrap();
+		let final_payments = channel_manager.payment.lock().unwrap();
 		println!("Final channels: {:?}", final_payments);
 
 		assert!(final_payments.is_some(), "New payment should be present");

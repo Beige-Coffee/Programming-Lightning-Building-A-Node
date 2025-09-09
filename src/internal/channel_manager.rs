@@ -23,16 +23,16 @@ pub enum RetryableSendFailure {
 
 pub struct ChannelManager {
   pub funding_tx: Mutex<Option<(ChannelId, PublicKey, Transaction)>>,
-  pub channels: Mutex<Option<(u128, u64)>>,
-  pub payments: Mutex<Option<PaymentId>>,
+  pub channel: Mutex<Option<(u128, u64, UserConfig)>>,
+  pub payment: Mutex<Option<PaymentId>>,
 }
 
 impl ChannelManager {
   pub fn new() -> Self {
     Self {
       funding_tx: Mutex::new(None),
-      channels: Mutex::new(None),
-      payments: Mutex::new(None)
+      channel: Mutex::new(None),
+      payment: Mutex::new(None)
     }
   }
 
@@ -52,11 +52,12 @@ impl ChannelManager {
   }
 
   pub fn create_channel(&self, their_network_key: PublicKey, channel_value_satoshis: u64, push_msat: u64, user_channel_id: u128, temporary_channel_id: Option<ChannelId>, override_config: Option<UserConfig>) -> Result<ChannelId, Error> {
-    let mut channels = self.channels.lock().unwrap();
+    let mut channels = self.channel.lock().unwrap();
 
     *channels = Some((
       user_channel_id,
-      channel_value_satoshis
+      channel_value_satoshis,
+      override_config.unwrap_or_default()
     ));
 
     let chan_id = ChannelId::new_zero();
@@ -73,7 +74,7 @@ impl ChannelManager {
 
   pub fn send_payment(&self, payment_hash: PaymentHash, recipient_onion: RecipientOnionFields, payment_id: PaymentId, route_params: RouteParameters, retry_strategy: Retry) -> Result<(), RetryableSendFailure> {
     
-    let mut payments = self.payments.lock().unwrap();
+    let mut payments = self.payment.lock().unwrap();
 
     *payments = Some(
       payment_id,
