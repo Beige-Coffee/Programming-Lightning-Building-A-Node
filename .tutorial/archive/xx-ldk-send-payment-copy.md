@@ -219,7 +219,7 @@ Now that we've seen how to calculate the fees and timelocks for all HTLCs along 
 
 
 ### Optimizing Route-Finding
-Now that we've reviewed a basic path-finding example where we focused on minimizing fees and timelocks, let's see how we can enhance our operations.
+Now that we've reviewed a basic path-finding example where we focused on minimizing fees and timelocks, let's review a ways that we can enhance our operations.
 
 #### Probing
 In our last example, we took it as a given that each channel in our graph had enough liquidity to forward our payment. However, that's not a safe assumption we can make in the real world!
@@ -241,30 +241,48 @@ For example, in the below diagram, we have the following path: Us -> Bob -> Node
   <img src="./tutorial_images/probing.png" alt="probing" width="80%" height="auto">
 </p>
 
-# Sending A Payment In LDK
+### Informing Peers How To Set Up Channels 
+
+As mentioned above, when sending payments, we (the originator of the payment) will need to wrap payment information, called a **payload**, up for each hop in the route. These payloads will provide vital pieces of information, such as the `cltv_expiry` that each HTLC along the route must have. Payload are communicated within the `upate_add_htlc` message, which is a message that peers will send to each other when deciding the advance their channel state by adding a new HTLC output.
+
+The payloads are a special field within the `upate_add_htlc` message. This is because this onion originates from  be wrapped such that each layer is encrypted. At each hop, the recipient of the payload will only be able to read the outer layer, which only they can decrypt. This is because each layer is encrypted using a shared secret that is created using the public node id that the given recipient broadcasts to the larger network as part of the gossip protocol. Since (hopefully!) only the recipient knows the private key to their public key, they will be the only ones who will be able to compute the shared secret the decrypts the payment instructions. 
+
+<p align="center" style="width: 50%; max-width: 300px;">
+  <img src="./tutorial_images/payloads.png" alt="payloads" width="100%" height="auto">
+</p>
+
+### Persistance
+
+Recall, LDK is a software development kit that focuses on implementing Lightning protocol-level functionality. Therefore, it does not take care of higher-level application logic, such as payment tracking.
+
+To ensure that our application is able to track payments correctly, especially if our application were to crash and be offline for a short period of time, we'll implement a structure to hold our outbound payment information in.
+
+<p align="center" style="width: 50%; max-width: 300px;">
+  <img src="./tutorial_images/persistance.png" alt="persistance" width="80%" height="auto">
+</p>
+
+#### ⚡️ Define `OutboundPaymentInfoStorage` Structure
+
+For this exercise, we'll define a structure to hold all output payment information. For each payment, we'll create a new data entry to track relevant pieces of information, such as the **Payment Preimage**, **Payment Secret**, **Payment Status**, and **Payment Amount**.
+
+To start, let's define a structure to hold all the above information. We'll call it `Payment Info`.
+
+
+### Sending A Payment In LDK
 To send a payment in LDK, we use the `send_payment` function, which is made available via the `ChannelManager`. LDK will take any payment information provided as input and convert it to the protocol messages, defined in [BOLT #2: Peer Protocol for Channel Management](https://github.com/lightning/bolts/blob/master/02-peer-protocol.md), neccessary to send a payment over Lightning.
 
 Once the payment is attempted, there are a variety of LDK events that we may recieve, depending on the status of the payment. You can see a list of them below:
-- `PaymentSent`: Indicates an outbound payment succeeded.
-- `PaymentFailed`: Indicates an outbound payment failed.
-- `PaymentPathSuccessful`: Indicates that a path for an outbound payment was successful. This is useful information for scoring purposes.
-- `PaymentPathFailed`: Indicates that a path for an outbound payment failed. Similar to above, this is useful information for scoring purposes.
+- `PaymentSent`: Indicates an outbound payment we made succeeded (i.e. it made it all the way to its target and we got back the payment preimage for it).
+- `PaymentFailed`: Indicates an outbound payment failed. Individual `Event::PaymentPathFailed` events provide failure information for each path attempt in the payment, including retries.
+- `PaymentPathSuccessful`: Indicates that a path for an outbound payment was successful.
+- `PaymentPathFailed`: Indicates an outbound HTLC we sent failed, likely due to an intermediary node being unable to handle the HTLC.
 
 
 <p align="center" style="width: 50%; max-width: 300px;">
   <img src="./tutorial_images/send_payment_events.png" alt="send_payment_events" width="100%" height="auto">
 </p>
 
-## Channel Manager send_payment()
-
 To initiate a payment with LDK, we can use the `send_payment` function within the `ChannelManager`. This function will take the following parameters as inputs:
-
-```rust
-pub fn send_payment(
-  &self, payment_hash: PaymentHash, recipient_onion: RecipientOnionFields,
-  payment_id: PaymentId, route_params: RouteParameters, retry_strategy: Retry,
-) -> Result<(), RetryableSendFailure> 
-```
 
 - `payment_hash`: This is the hash of the payment preimage. This needs to be included in each HTLC that is set up along the payment path. If the payment is successful, the recipient will reveal the preimage that, when hashed, equals the `payment_hash`.
 - `recipient_onion`: This is the encrypted payloads for each hop in the route.
@@ -276,17 +294,6 @@ This function will return either of the following two:
 - `Ok()`: The payment has succeeded.
 - `RetryableSendFailure`: The payment failed for one of the following reasons: `PaymentExpired`, `RouteNotFound`, `DuplicatePayment`, `OnionPacketSizeExceeded`.
 
-## ⚡️ Complete `send_ln_payment`
-For this exercise, we'll continue coding in `src/commands.rs` and implement `send_ln_payment`, which will initiate a payment on the Lightning network. This function takes a `channel_manager` (to manage channel operations), invoice object, optional amount of sats to send in the payment, an `OutboundPaymentInfoStorage`, and the `FileStore` we created earlier. Your task is to generate payment and send the payment through the channel manager. Make sure to save the payment attempt before sending the payment!
-
-We haven't reviewed the `OutboundPaymentInfoStorage` yet, so let's take a quick momeny to review it here. The `OutboundPaymentInfoStorage` is a simple `HashMap` that stores `PaymentId` and `PaymentInfo`. This is not an LDK component. It's a storage solution that we'll use to keep track of the payments that our application sends.
-
-```rust
-pub(crate) struct OutboundPaymentInfoStorage {
-  payments: HashMap<PaymentId, PaymentInfo>,
-}
-```
-
 ```rust
 pub fn send_ln_payment(
     channel_manager: &ChannelManager,
@@ -295,9 +302,9 @@ pub fn send_ln_payment(
     outbound_payments: &mut OutboundPaymentInfoStorage,
     fs_store: FileStore,
 ) {
-    // Step 1: Extract payment parameters
+    // Step 1: Generate payment ID and secret
   
-    // Step 2: Generate payment ID and secret
+    // Step 2: Extract payment parameters
   
     // Step 3: Record payment attempt
   
@@ -307,33 +314,9 @@ pub fn send_ln_payment(
 Below, you’ll find step-by-step guidance to assist in completing the `send_payment` function.
 
 <details>
-<summary>Step 1: Extract Payment Parameters</summary>
+<summary>Step 1: Generate Payment ID and Secret</summary>
 
-Remember, a main goal of this exercise is to call the `send_payment` method on the **ChannelManager**. To do this, we'll need the following parameters...
-
-```rust
-pub fn send_payment(
-  &self, payment_hash: PaymentHash, recipient_onion: RecipientOnionFields,
-  payment_id: PaymentId, route_params: RouteParameters, retry_strategy: Retry,
-) -> Result<(), RetryableSendFailure> 
-```
-We can obtain a few of these by passing the invoice to LDK, via the `payment_parameters_from_invoice` function, which will will return the payment hash, onion-wrapped messages, and routing parameters for the chosen route.
-
-
-```rust
-let pay_params_opt = payment_parameters_from_invoice(invoice);
-let (payment_hash, recipient_onion, route_params) = pay_params_opt.unwrap();
-```
-- `payment_parameters_from_invoice(invoice)` parses the invoice, returning a `Result` with a tuple `(PaymentHash, RecipientOnionFields, RouteParameters)`.
-
-You can read more about the `payment_parameters_from_invoice` function [here](https://docs.rs/lightning/latest/lightning/ln/bolt11_payment/fn.payment_parameters_from_invoice.html.)
-
-</details>
-
-<details>
-<summary>Step 2: Generate Payment ID and Secret</summary>
-
-Next, we'll need to create a `PaymentId` for the invoice, which is a user-provided identifier for the payment. To ensure this is unique for each payment, we can use the payment hash included in the invoice. We'll also extract the payment secret from the invoice. The payment secret is important, as it is **included in the onion when constructed by the sender**. This acts as a form of authentication, allowing the reciever to verify that the onion originated from the sender. If this was not present, a forwarding node could attempt to re-construct an onion packet with a smaller amount and send it to the recipient. If the invoice was originally a zero-amount invoice, then the reciever may accept the smaller payment, since there was no original amount.
+Create a `PaymentId` from the invoice’s payment hash and extract the payment secret.
 
 ```rust
 let payment_id = PaymentId((*invoice.payment_hash()).to_byte_array());
@@ -343,24 +326,38 @@ let payment_secret = Some(*invoice.payment_secret());
 - `.to_byte_array()` converts the hash to a 32-byte array for `PaymentId`.
 - `PaymentId(...)` constructs the unique identifier for tracking the payment.
 - `invoice.payment_secret()` returns the `PaymentSecret` (a 32-byte value) for the invoice.
+- `Some(*...)` wraps the secret in an `Option`, as required by `PaymentInfo`.
 
-We'll need to wrap the `payment_secret` in a `Some` because we'll wrap it within the `PaymentInfo` shortly, and the `secret` field here is optional, as you can see in the struct definition below.
+</details>
+
+<details>
+<summary>Step 2: Extract Payment Parameters</summary>
+
+Extract payment parameters (hash, onion routing data, and route parameters) from the invoice, handling errors if parsing fails.
 
 ```rust
-pub(crate) struct PaymentInfo {
-  preimage: Option<PaymentPreimage>,
-  secret: Option<PaymentSecret>,
-  status: HTLCStatus,
-  amt_msat: MillisatAmount,
-}
+let pay_params_opt = payment_parameters_from_invoice(invoice);
+let (payment_hash, recipient_onion, route_params) = match pay_params_opt {
+    Ok(res) => res,
+    Err(e) => {
+        println!("Failed to parse invoice: {:?}", e);
+        print!("> ");
+        return;
+    },
+};
 ```
+- `payment_parameters_from_invoice(invoice)` parses the invoice, returning a `Result` with a tuple `(Sha256, RecipientOnion, RouteParameters)`.
+- `match pay_params_opt` handles the result:
+  - `Ok(res)` binds the tuple to `res`, which is unpacked into `payment_hash`, `recipient_onion`, and `route_params`.
+  - `Err(e)` prints an error message with the failure reason and returns early, exiting the function.
+- These parameters are used in `send_payment` to route the payment correctly.
 
 </details>
 
 <details>
 <summary>Step 3: Record Payment Attempt</summary>
 
-We're making great progress! Before we send the payment, let's store it within our filesystem database so that we have a record of attempting the payment. To do this, we'll need to add a key-value pair `OutboundPaymentInfoStorage` `HashMap` where the **key** is the `payment_id` and the **value** is the `PaymentInfo` struct that stores information about our payment. After interting this into our `OutboundPaymentInfoStorage`, let's persist the data to our file system storage!
+Store the payment details in `outbound_payments` and persist the updated storage to `fs_store`.
 
 ```rust
 outbound_payments.payments.insert(
@@ -375,20 +372,19 @@ outbound_payments.payments.insert(
 fs_store.write("", "", OUTBOUND_PAYMENTS_FNAME, &outbound_payments.encode()).unwrap();
 ```
 - `outbound_payments.payments.insert` adds a new entry to the payment map:
-  - `payment_id`: The ID from Step 2.
-  - `PaymentInfo`: Contains `preimage: None` (since there is no preimage yet), `secret` (from Step 2), `status: HTLCStatus::Pending`, and `amt_msat: MillisatAmount(invoice.amount_milli_satoshis())` (the invoice amount in millisatoshis).
+  - `payment_id`: The ID from Step 1.
+  - `PaymentInfo`: Contains `preimage: None` (no preimage yet), `secret` (from Step 1), `status: HTLCStatus::Pending`, and `amt_msat: MillisatAmount(invoice.amount_milli_satoshis())` (the invoice amount in millisatoshis).
 - `fs_store.write` persists the updated `outbound_payments` to a file named `OUTBOUND_PAYMENTS_FNAME`:
   - `outbound_payments.encode()` serializes the storage to bytes.
   - `.unwrap()` assumes the write succeeds (handle errors in production).
+- This ensures the payment attempt is recorded before sending.
 
 </details>
 
 <details>
 <summary>Step 4: Send Payment and Handle Result</summary>
 
-Finally, now that we have all of the required information, let's call `channel_manager.send_payment` to initiate the payment and handle the result! Remember, LDK will inform us if the payment suceeeds via an event, so we'll record a success when we receive a `PaymentSent` event. However, if there is an error in calling this function, then we can record a failure immediately.
-
-Regardless of if the payment initiates succesfully, we'll record the status by printing it to the console.
+Call `channel_manager.send_payment` to initiate the payment and handle the result, updating the payment status on failure.
 
 ```rust
 match channel_manager.send_payment(
@@ -402,20 +398,22 @@ match channel_manager.send_payment(
         let payee_pubkey = invoice.recover_payee_pub_key();
         let amt_msat = invoice.amount_milli_satoshis().unwrap();
         println!("EVENT: initiated sending {} msats to {}", amt_msat, payee_pubkey);
+        print!("> ");
     },
     Err(e) => {
         println!("ERROR: failed to send payment: {:?}", e);
+        print!("> ");
         outbound_payments.payments.get_mut(&payment_id).unwrap().status = HTLCStatus::Failed;
         fs_store.write("", "", OUTBOUND_PAYMENTS_FNAME, &outbound_payments.encode()).unwrap();
     },
 };
 ```
 - `channel_manager.send_payment` sends the payment with:
-  - `payment_hash`, `recipient_onion`, `route_params` from Step 1.
-  - `payment_id` from Step 2.
+  - `payment_hash`, `recipient_onion`, `route_params` from Step 2.
+  - `payment_id` from Step 1.
   - `Retry::Timeout(Duration::from_secs(10))` for a 10-second retry timeout.
 - `match` handles the `Result`:
-  - `Ok(_)`: Print a success message with the payee’s public key (`invoice.recover_payee_pub_key()`) and amount (`invoice.amount_milli_satoshis().unwrap()`)`
+  - `Ok(_)`: Print a success message with the payee’s public key (`invoice.recover_payee_pub_key()`) and amount (`invoice.amount_milli_satoshis().unwrap()`), then print a prompt.
   - `Err(e)`: Print an error message, update the payment status to `HTLCStatus::Failed` in `outbound_payments`, persist the change with `fs_store.write`, and print a prompt.
 - `.unwrap()` on `get_mut` and `fs_store.write` assumes success (handle errors in production).
 
