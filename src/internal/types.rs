@@ -21,15 +21,20 @@ impl PeerManager {
 	}
 }
 
-pub struct FileStore(String);
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct FileStore{
+    pub data: std::collections::HashMap<(String, String, String), Vec<u8>>,
+}
 
 impl FileStore {
-	pub fn new() -> Self {
-		FileStore(String::new())
-	}
-	pub fn write(&self, primary_namespace: &str, secondary_namespace: &str, key: &str, buf: &[u8]) -> Result<(), std::io::Error>{
-		Ok(())
-	}
+    pub fn new() -> Self {
+        FileStore { data: std::collections::HashMap::new() }
+    }
+
+    pub fn write(&mut self, primary_namespace: &str, secondary_namespace: &str, key: &str, buf: &[u8]) -> Result<(), std::io::Error> {
+        self.data.insert((primary_namespace.to_string(), secondary_namespace.to_string(), key.to_string()), buf.to_vec());
+        Ok(())
+    }
 }
 
 pub struct OnChainWallet(String);

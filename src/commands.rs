@@ -79,7 +79,7 @@ pub(crate) const OUTBOUND_PAYMENTS_FNAME: &str = "outbound_payments";
 
 pub fn send_ln_payment(
 	channel_manager: &ChannelManager, invoice: &Bolt11Invoice, required_amount_msat: Option<u64>,
-	outbound_payments: &mut OutboundPaymentInfoStorage, fs_store: FileStore,
+	outbound_payments: &mut OutboundPaymentInfoStorage, fs_store: &mut FileStore,
 ) {
 	let payment_id = PaymentId((*invoice.payment_hash()).to_byte_array());
 	let payment_secret = Some(*invoice.payment_secret());
