@@ -61,29 +61,11 @@ impl BitcoindClient {
 		let http_endpoint = HttpEndpoint::for_host(host.clone()).with_port(port);
 
 		let rpc_credentials = base64::encode(format!("{}:{}", rpc_user, rpc_password));
-		println!(
-				"Connecting to bitcoind: host={}, port={}, rpc_user={}, rpc_pass={}",
-				host, port, rpc_user, rpc_password,
-		);
+
 		let bitcoind_rpc_client = RpcClient::new(&rpc_credentials, http_endpoint).map_err(|e| {
 				eprintln!("Failed to create RpcClient: {:?}", e);
 				std::io::Error::new(std::io::ErrorKind::Other, format!("RpcClient creation failed: {:?}", e))
 		})?;
-
-		let dummy = bitcoind_rpc_client
-			.call_method::<BlockchainInfo>("getblockchaininfo", &vec![])
-			.await
-			.map_err(|_| {
-				std::io::Error::new(std::io::ErrorKind::PermissionDenied,
-				"Failed to make initial call to bitcoind - please check your RPC user/password and access settings")
-			})?;
-
-		println!(
-				"Blockchain info: {:?}",
-				dummy,
-		);
-
-
 
 		let mut fees: HashMap<ConfirmationTarget, AtomicU32> = HashMap::new();
 

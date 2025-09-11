@@ -722,7 +722,6 @@ async fn start_ldk() {
 	// `lightning::util::persist::read_channel_monitors` like this:
 	//read_channel_monitors(Arc::clone(&persister), Arc::clone(&keys_manager), Arc::clone(&keys_manager)).unwrap();
 	let (best_block_hash, best_block_height) = bitcoind_client.get_best_block().await.unwrap();
-	println!("🏗️  Best block: height={:?}, hash={:?}", best_block_hash, best_block_height);
 
 	// Step 8: Poll for the best chain tip, which may be used by the channel manager & spv client
 	let polled_chain_tip = init::validate_best_block_header(bitcoind_client.as_ref())
