@@ -101,7 +101,7 @@ async fn get_wallet() -> Arc<LdkOnChainWallet> {
 }
 
 #[cfg(test)]
-mod bitcoind_tests {
+mod programming_lightning {
 	use super::*;
 	use serial_test::serial;
 
