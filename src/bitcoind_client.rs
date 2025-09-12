@@ -1,10 +1,18 @@
-#![allow(dead_code, unused_imports, unused_variables,unused_mut, unused_must_use, unexpected_cfgs, elided_named_lifetimes)]
+#![allow(
+	dead_code,
+	unused_imports,
+	unused_variables,
+	unused_mut,
+	unused_must_use,
+	unexpected_cfgs,
+	elided_named_lifetimes
+)]
 use crate::convert::{
-	BlockchainInfo, FeeResponse, FundedTx, ListUnspentResponse, MempoolMinFeeResponse, NewAddress,
-	RawTx, SignedTx, MempoolInfo
+	BlockchainInfo, FeeResponse, FundedTx, ListUnspentResponse, MempoolInfo, MempoolMinFeeResponse,
+	NewAddress, RawTx, SignedTx,
 };
-use crate::logger::FilesystemLogger;
 use crate::hex_utils;
+use crate::logger::FilesystemLogger;
 use base64;
 use bitcoin::address::Address;
 use bitcoin::blockdata::constants::WITNESS_SCALE_FACTOR;
@@ -19,27 +27,22 @@ use bitcoin::{Network, OutPoint, TxOut, WPubkeyHash};
 use lightning::chain::chaininterface::{BroadcasterInterface, ConfirmationTarget, FeeEstimator};
 use lightning::events::bump_transaction::{Utxo, WalletSource};
 use lightning::log_error;
+use lightning::log_info;
 use lightning::sign::ChangeDestinationSource;
 use lightning::util::logger::Logger;
 use lightning_block_sync::http::HttpEndpoint;
 use lightning_block_sync::rpc::RpcClient;
+use lightning_block_sync::rpc::RpcError;
 use lightning_block_sync::{AsyncBlockSourceResult, BlockData, BlockHeaderData, BlockSource};
-use lightning::log_info;
 use serde_json;
 use std::collections::HashMap;
 use std::str::FromStr;
 use std::sync::atomic::{AtomicU32, Ordering};
 use std::sync::Arc;
 use std::time::Duration;
-use lightning_block_sync::rpc::RpcError;
 
 /// The minimum feerate we are allowed to send, as specify by LDK.
 const MIN_FEERATE: u32 = 253;
-
-////////////////////////////
-// START Exercise 1 //
-// Implement `new`
-////////////////////////////
 
 pub struct BitcoindClient {
 	pub(crate) bitcoind_rpc_client: Arc<RpcClient>,
@@ -53,6 +56,11 @@ pub struct BitcoindClient {
 	logger: Arc<FilesystemLogger>,
 }
 
+////////////////////////////
+// START Exercise 3 //
+// Implement the new constructor For Our BitcoindClient
+////////////////////////////
+
 impl BitcoindClient {
 	pub(crate) async fn new(
 		host: String, port: u16, rpc_user: String, rpc_password: String, network: Network,
@@ -63,8 +71,11 @@ impl BitcoindClient {
 		let rpc_credentials = base64::encode(format!("{}:{}", rpc_user, rpc_password));
 
 		let bitcoind_rpc_client = RpcClient::new(&rpc_credentials, http_endpoint).map_err(|e| {
-				eprintln!("Failed to create RpcClient: {:?}", e);
-				std::io::Error::new(std::io::ErrorKind::Other, format!("RpcClient creation failed: {:?}", e))
+			eprintln!("Failed to create RpcClient: {:?}", e);
+			std::io::Error::new(
+				std::io::ErrorKind::Other,
+				format!("RpcClient creation failed: {:?}", e),
+			)
 		})?;
 
 		let mut fees: HashMap<ConfirmationTarget, AtomicU32> = HashMap::new();
@@ -72,18 +83,17 @@ impl BitcoindClient {
 		fees.insert(ConfirmationTarget::MaximumFeeEstimate, AtomicU32::new(50000));
 		fees.insert(ConfirmationTarget::UrgentOnChainSweep, AtomicU32::new(5000));
 		fees.insert(
-				ConfirmationTarget::MinAllowedAnchorChannelRemoteFee,
-				AtomicU32::new(MIN_FEERATE),
+			ConfirmationTarget::MinAllowedAnchorChannelRemoteFee,
+			AtomicU32::new(MIN_FEERATE),
 		);
 		fees.insert(
-				ConfirmationTarget::MinAllowedNonAnchorChannelRemoteFee,
-				AtomicU32::new(MIN_FEERATE),
+			ConfirmationTarget::MinAllowedNonAnchorChannelRemoteFee,
+			AtomicU32::new(MIN_FEERATE),
 		);
 		fees.insert(ConfirmationTarget::AnchorChannelFee, AtomicU32::new(MIN_FEERATE));
 		fees.insert(ConfirmationTarget::NonAnchorChannelFee, AtomicU32::new(2000));
 		fees.insert(ConfirmationTarget::ChannelCloseMinimum, AtomicU32::new(MIN_FEERATE));
 		fees.insert(ConfirmationTarget::OutputSpendingFee, AtomicU32::new(MIN_FEERATE));
-
 
 		let client = Self {
 			bitcoind_rpc_client: Arc::new(bitcoind_rpc_client),
@@ -98,29 +108,25 @@ impl BitcoindClient {
 		};
 
 		BitcoindClient::poll_for_fee_estimates(
-				client.fees.clone(),
-				client.bitcoind_rpc_client.clone(),
-				handle,
+			client.fees.clone(),
+			client.bitcoind_rpc_client.clone(),
+			handle,
 		);
 
 		Ok(client)
 	}
-
-	////////////////////////////
-	// END Exercise 1 //
-	////////////////////////////
-
 }
 
 ////////////////////////////
-// START Exercise 2 //
+// START Exercise 4 //
+// Implement BlockSource For Our BitcoinClient
 ////////////////////////////
 
 impl BlockSource for BitcoindClient {
 	fn get_header<'a>(
 		&'a self, header_hash: &'a BlockHash, height_hint: Option<u32>,
 	) -> AsyncBlockSourceResult<'a, BlockHeaderData> {
-		Box::pin(async move { 
+		Box::pin(async move {
 			let header_hash = serde_json::json!(header_hash.to_string());
 			Ok(self.bitcoind_rpc_client.call_method("getblockheader", &[header_hash]).await?)
 		})
@@ -129,10 +135,12 @@ impl BlockSource for BitcoindClient {
 	fn get_block<'a>(
 		&'a self, header_hash: &'a BlockHash,
 	) -> AsyncBlockSourceResult<'a, BlockData> {
-		Box::pin( async move {
+		Box::pin(async move {
 			let header_hash = serde_json::json!(header_hash.to_string());
 			let verbosity = serde_json::json!(0);
-			Ok(BlockData::FullBlock(self.bitcoind_rpc_client.call_method("getblock", &[header_hash, verbosity]).await?))
+			Ok(BlockData::FullBlock(
+				self.bitcoind_rpc_client.call_method("getblock", &[header_hash, verbosity]).await?,
+			))
 		})
 	}
 
@@ -144,14 +152,9 @@ impl BlockSource for BitcoindClient {
 }
 
 ////////////////////////////
-// END Exercise 2 //
+// START Exercise 5 //
+//  Implement BroadcasterInterface On Our BitcoinClient
 ////////////////////////////
-
-
-////////////////////////////
-// START Exercise 3 //
-////////////////////////////
-
 
 impl BroadcasterInterface for BitcoindClient {
 	fn broadcast_transactions(&self, txs: &[&Transaction]) {
@@ -164,23 +167,18 @@ impl BroadcasterInterface for BitcoindClient {
 				match bitcoind_rpc_client
 					.call_method::<serde_json::Value>("sendrawtransaction", &[tx_json])
 					.await
-
 				{
 					Ok(result) => {
 						log_info!(logger, "Successfully broadcasted transaction: {:?}", result);
 					},
 					Err(e) => {
 						log_error!(logger, "Failed to broadcast transaction: {:?}", e);
-					}
+					},
 				}
 			});
 		}
 	}
 }
-
-////////////////////////////
-// END Exercise 3 //
-////////////////////////////
 
 impl BitcoindClient {
 	fn poll_for_fee_estimates(
@@ -297,7 +295,8 @@ impl BitcoindClient {
 }
 
 ////////////////////////////
-// START Exercise 4 //
+// START Exercise 6 //
+// Implement FeeEstimator On Our BitcoinClient
 ////////////////////////////
 
 impl FeeEstimator for BitcoindClient {
@@ -306,13 +305,7 @@ impl FeeEstimator for BitcoindClient {
 	}
 }
 
-
-	////////////////////////////
-	// END Exercise 4 //
-	////////////////////////////
-
 impl BitcoindClient {
-
 	pub fn get_new_rpc_client(&self) -> std::io::Result<RpcClient> {
 		let http_endpoint = HttpEndpoint::for_host(self.host.clone()).with_port(self.port);
 		let rpc_credentials =
@@ -328,9 +321,6 @@ impl BitcoindClient {
 	}
 
 	pub async fn get_raw_mempool(&self) -> MempoolInfo {
-	self.bitcoind_rpc_client
-	.call_method("getrawmempool", &[])
-	.await
-	.unwrap()
+		self.bitcoind_rpc_client.call_method("getrawmempool", &[]).await.unwrap()
 	}
 }

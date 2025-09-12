@@ -211,6 +211,14 @@ where
 		Ok(())
 	}
 
+
+	////////////////////////////
+	// START Exercise 7 //
+	// Implement create_funding_transaction
+	////////////////////////////
+
+	
+
 	/// Creates a Bitcoin transaction with the specified outputs
 	/// 
 	/// This method handles the complete transaction creation process:

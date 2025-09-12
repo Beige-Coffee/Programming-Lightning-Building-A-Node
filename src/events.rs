@@ -16,6 +16,11 @@ use bitcoin::{
     Amount,
 };
 
+////////////////////////////
+// START Exercise 10 //
+// Implement FundingGenerationReady for handle_ldk_events
+////////////////////////////
+
 pub async fn handle_ldk_events(
     channel_manager: &ChannelManager, 
     bitcoind_client: BitcoindClient,

@@ -28,6 +28,11 @@ async fn setup_inbound(peer_manager: Arc<MockPeerManager>, _stream: std::net::Tc
     // Mock implementation (does nothing else)
 }
 
+////////////////////////////
+// START Exercise 9 //
+// Accept Incoming Connections
+////////////////////////////
+
 // Define the networking function
 pub async fn start_network_listener(
     peer_manager: Arc<MockPeerManager>,

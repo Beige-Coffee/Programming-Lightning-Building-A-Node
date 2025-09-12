@@ -14,10 +14,14 @@ use std::net::SocketAddr;
 use std::path::Path;
 use std::sync::Arc;
 
-// define FilesystemLogger
 pub(crate) struct FilesystemLogger {
   pub data_dir: String,
 }
+
+////////////////////////////
+// START Exercise 1 //
+// Implement new Constructor For FilesystemLogger
+////////////////////////////
 
 impl FilesystemLogger {
   pub(crate) fn new(data_dir: String) -> Self {
@@ -29,6 +33,11 @@ impl FilesystemLogger {
     }
   }
 }
+
+////////////////////////////
+// START Exercise 2 //
+// Implement LDK Logger Trait For FilesystemLogger
+////////////////////////////
 
 impl Logger for FilesystemLogger {
   fn log(&self, record: Record) {

@@ -85,6 +85,12 @@ impl KVStore for FilesystemStore {
 		Ok(buf)
 	}
 
+
+	////////////////////////////
+	// START Exercise 8 //
+	// Implement write for our FilesystemStore
+	////////////////////////////
+
 	fn write(
 		&self, primary_namespace: &str, secondary_namespace: &str, key: &str, buf: &[u8],
 	) -> lightning::io::Result<()> {

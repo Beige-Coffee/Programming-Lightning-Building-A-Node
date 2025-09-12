@@ -11,9 +11,13 @@ use lightning::util::config::{ChannelHandshakeConfig, ChannelHandshakeLimits, Us
 use lightning_invoice::Bolt11Invoice;
 use std::collections::HashMap;
 use std::time::Duration;
-//
-// Open Channel Exercise
-//
+
+
+////////////////////////////
+// START Exercise 11 //
+// Complete open_channel
+////////////////////////////
+
 pub fn open_channel(
 	peer_pubkey: PublicKey, channel_amt_sat: u64, announce_channel: bool, with_anchors: bool,
 	channel_manager: &ChannelManager,
@@ -41,9 +45,10 @@ pub fn open_channel(
 	}
 }
 
-//
-// Send Payment Exercise 1
-//
+////////////////////////////
+// START Exercise 12 //
+// Complete send_ln_payment
+////////////////////////////
 
 #[derive(Copy, Clone, Debug)]
 pub(crate) enum HTLCStatus {

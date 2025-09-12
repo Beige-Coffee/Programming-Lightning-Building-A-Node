@@ -234,7 +234,7 @@ mod bitcoind_tests {
 
 	#[test]
 	#[serial]
-	fn test_08_filesystemstore_right() -> io::Result<()> {
+	fn test_08_filesystemstore_write() -> io::Result<()> {
 		let mut temp_path = temp_dir();
 		temp_path.push("simple_store_test");
 		let store = ExerciseFileStore::new(temp_path.clone());
