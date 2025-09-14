@@ -1,54 +1,50 @@
 //use bdk_wallet::Wallet as BdkWallet;
-use bdk_esplora::esplora_client::{Builder, BlockingClient};
-use bdk_esplora::{esplora_client, EsploraExt};
+use ::bdk_wallet::template::Bip84;
+use ::bdk_wallet::Wallet as BdkWallet;
 use bdk_chain::ChainPosition::{Confirmed, Unconfirmed};
+use bdk_esplora::esplora_client::{BlockingClient, Builder};
+use bdk_esplora::{esplora_client, EsploraExt};
 use bdk_wallet::rusqlite::Connection;
 use bdk_wallet::PersistedWallet;
 use bdk_wallet::{
 	bitcoin::{Block, Network},
 	KeychainKind, SignOptions, Wallet,
 };
-use ::bdk_wallet::Wallet as BdkWallet;
-use bitcoin::network::Network as BitcoinNetwork;
-use std::{collections::BTreeSet, io::Write};
 use bdk_wallet::{AddressInfo, Balance};
 use bitcoin::address::Address;
 use bitcoin::blockdata::constants::WITNESS_SCALE_FACTOR;
+use bitcoin::blockdata::locktime::absolute::LockTime;
 use bitcoin::blockdata::script::ScriptBuf;
 use bitcoin::blockdata::transaction::Transaction;
 use bitcoin::hashes::Hash;
 use bitcoin::key::XOnlyPublicKey;
+use bitcoin::network::Network as BitcoinNetwork;
 use bitcoin::psbt::Psbt;
+use bitcoin::Amount;
 use bitcoin::FeeRate;
 use bitcoin::{OutPoint, TxOut, WPubkeyHash};
 use lightning::chain::chaininterface::{BroadcasterInterface, ConfirmationTarget, FeeEstimator};
 use lightning::events::bump_transaction::{Utxo, WalletSource};
+use lightning::log_error;
 use lightning::log_info;
 use lightning::sign::ChangeDestinationSource;
 use lightning::util::logger::Logger;
 use std::collections::HashMap;
 use std::ops::Deref;
 use std::sync::{Mutex, RwLock};
-use bitcoin::blockdata::locktime::absolute::LockTime;
-use bitcoin::{
-	Amount,
-};
+use std::{collections::BTreeSet, io::Write};
 use std::{
 	path::PathBuf,
 	sync::{mpsc::sync_channel, Arc},
 	thread::spawn,
 	time::Instant,
 };
-use lightning::log_error;
-use ::bdk_wallet::template::Bip84;
-
 
 const STOP_GAP: usize = 5;
 const PARALLEL_REQUESTS: usize = 5;
 
-
 /// On-chain Bitcoin wallet with BDK
-/// 
+///
 /// This struct wraps a BDK wallet and provides the functionality used in Lightning
 /// operations like funding channels, sweeping outputs, and managing on-chain funds.
 /// It implements LDK traits (ChangeDestinationSource, WalletSource) to integrate with an LDK Lightning node.
@@ -85,10 +81,10 @@ where
 	L::Target: Logger,
 {
 	/// Creates a new on-chain wallet from a seed phrase
-	/// 
+	///
 	/// This method encapsulates all the BDK wallet construction logic,
 	/// including descriptor creation, database setup, and blockchain client initialization.
-	/// 
+	///
 	/// # Arguments
 	/// * `keys_seed` - 32-byte seed for deriving wallet keys
 	/// * `network` - Bitcoin network (mainnet, testnet, regtest, signet)
@@ -96,14 +92,13 @@ where
 	/// * `fee_estimator` - Component for estimating transaction fees
 	/// * `broadcaster` - Component for broadcasting transactions
 	/// * `logger` - Component for logging operations
-	/// 
+	///
 	/// # Returns
 	/// Configured OnChainWallet ready for Lightning operations
 	pub(crate) fn new_from_seed(
-		keys_seed: &[u8], network: BitcoinNetwork,
-		path_to_db: &str, fee_estimator: E, broadcaster: B, logger: L,
+		keys_seed: &[u8], network: BitcoinNetwork, path_to_db: &str, fee_estimator: E,
+		broadcaster: B, logger: L,
 	) -> Self {
-
 		// Derive the master extended private key from the seed
 		let xprv = bitcoin::bip32::Xpriv::new_master(network, &keys_seed).unwrap();
 		// External keychain: for receiving payments and change outputs
@@ -146,7 +141,14 @@ where
 		let client = Arc::new(esplora_client::Builder::new(&esplora_url).build_blocking());
 
 		// Create the wallet instance
-		let this = Self { inner, client, path_to_db: path_to_db.to_string(), broadcaster, fee_estimator, logger };
+		let this = Self {
+			inner,
+			client,
+			path_to_db: path_to_db.to_string(),
+			broadcaster,
+			fee_estimator,
+			logger,
+		};
 
 		// Perform initial blockchain scan to discover existing transactions
 		this.full_scan();
@@ -155,24 +157,24 @@ where
 	}
 
 	/// Performs a full blockchain scan to discover wallet transactions
-	/// 
+	///
 	/// This scans the entire blockchain history for transactions belonging to this wallet.
 	/// Should only be called during initial setup or wallet recovery.
 	pub fn full_scan(&self) -> anyhow::Result<(), Box<dyn std::error::Error>> {
-		let mut wallet = self.inner.lock().unwrap(); 
+		let mut wallet = self.inner.lock().unwrap();
 		let mut db = Connection::open(self.path_to_db.clone()).unwrap();
-		
+
 		let request = wallet.start_full_scan().inspect({
 			let mut stdout = std::io::stdout();
 			let mut once = BTreeSet::<KeychainKind>::new();
 			move |keychain, spk_i, _| {
-					if once.insert(keychain) {
-							//print!("\nScanning keychain [{keychain:?}] ");
-					}
-					if spk_i % 5 == 0 {
-							//print!(" {spk_i:<3}");
-					}
-					stdout.flush().expect("must flush")
+				if once.insert(keychain) {
+					//print!("\nScanning keychain [{keychain:?}] ");
+				}
+				if spk_i % 5 == 0 {
+					//print!(" {spk_i:<3}");
+				}
+				stdout.flush().expect("must flush")
 			}
 		});
 
@@ -180,11 +182,10 @@ where
 		wallet.apply_update(update)?;
 		wallet.persist(&mut db)?;
 		Ok(())
-		
 	}
 
 	/// Synchronizes wallet with latest blockchain state
-	/// 
+	///
 	/// This is more efficient than full_scan as it only checks for new transactions
 	/// since the last sync. Should be called regularly to keep wallet up-to-date.
 	pub fn sync_wallet(&self) -> anyhow::Result<(), Box<dyn std::error::Error>> {
@@ -192,17 +193,16 @@ where
 		let mut db = Connection::open(self.path_to_db.clone()).unwrap();
 
 		let mut printed = 0;
-		let sync_request = wallet
-				.start_sync_with_revealed_spks()
-				.inspect(move |_, sync_progress| {
-						let progress_percent =
-								(100 * sync_progress.consumed()) as f32 / sync_progress.total() as f32;
-						let progress_percent = progress_percent.round() as u32;
-						if progress_percent % 5 == 0 && progress_percent > printed {
-								std::io::stdout().flush().expect("must flush");
-								printed = progress_percent;
-						}
-				});
+		let sync_request =
+			wallet.start_sync_with_revealed_spks().inspect(move |_, sync_progress| {
+				let progress_percent =
+					(100 * sync_progress.consumed()) as f32 / sync_progress.total() as f32;
+				let progress_percent = progress_percent.round() as u32;
+				if progress_percent % 5 == 0 && progress_percent > printed {
+					std::io::stdout().flush().expect("must flush");
+					printed = progress_percent;
+				}
+			});
 		let sync_update = self.client.sync(sync_request, PARALLEL_REQUESTS)?;
 
 		wallet.apply_update(sync_update)?;
@@ -211,23 +211,19 @@ where
 		Ok(())
 	}
 
-
 	////////////////////////////
 	// START Exercise 7 //
 	// Implement create_funding_transaction
 	////////////////////////////
 
-	
-
-	/// Creates a Bitcoin transaction with the specified outputs
-	/// 
+	/// Creates a Funding transaction with the specified outputs
+	///
 	/// This method handles the complete transaction creation process:
 	/// selecting UTXOs, calculating fees, and signing the transaction.
-	pub fn create_funding_transaction(&self,
-									output_script: ScriptBuf,
-									amount: Amount,
-									confirmation_target: ConfirmationTarget,
-									locktime: LockTime) -> Transaction {
+	pub fn create_funding_transaction(
+		&self, output_script: ScriptBuf, amount: Amount, confirmation_target: ConfirmationTarget,
+		locktime: LockTime,
+	) -> Transaction {
 		// get lock on wallet
 		let mut wallet = self.inner.lock().unwrap();
 
@@ -235,8 +231,7 @@ where
 		let mut tx_builder = wallet.build_tx();
 
 		// get fee rate, assuming normal fees
-		let fee_rate =
-			self.fee_estimator.get_est_sat_per_1000_weight(confirmation_target) as u64;
+		let fee_rate = self.fee_estimator.get_est_sat_per_1000_weight(confirmation_target) as u64;
 		let fees = FeeRate::from_sat_per_kwu(fee_rate);
 
 		tx_builder.add_recipient(output_script, amount).fee_rate(fees).nlocktime(locktime);
@@ -254,7 +249,7 @@ where
 	}
 
 	/// Generates a new Bitcoin address for receiving funds
-	/// 
+	///
 	/// Uses the external keychain to generate fresh receive addresses.
 	pub fn get_address(&self) -> Address {
 		let mut locked_wallet = self.inner.lock().unwrap();
